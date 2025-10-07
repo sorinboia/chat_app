@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import uuid
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
@@ -15,6 +15,7 @@ from ..core.dependencies import (
     get_current_user,
     get_db,
     get_mcp_service,
+    get_ollama_service,
     get_rag_service,
     get_trace_service,
     get_uploads_directory,
@@ -31,7 +32,8 @@ from ..schemas import (
     ToolCallResponse,
 )
 from ..services.mcp import MCPService
-from ..services.rag import RAGService
+from ..services.ollama import OllamaService
+from ..services.rag import RAGService, RetrievedChunk
 from ..services.tracing import TraceService
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -233,18 +235,29 @@ async def _store_upload(
     return upload
 
 
-def _build_assistant_reply(query: str, retrieved_texts: List[str]) -> str:
-    if not retrieved_texts:
-        return (
-            "I'm using the default demo model. No RAG sources were retrieved for your question yet, "
-            "so this is a generic response."
-        )
-    preview = "\n\n".join(retrieved_texts)
-    return (
-        "Here is what I found in your uploaded documents:\n\n"
-        f"{preview}\n\nBased on that context, here's a concise answer: \n"
-        f"{query}"
-    )
+def _resolve_persona_prompt(persona_id: str | None, app_config) -> Optional[str]:
+    personas = app_config.personas
+    target_id = persona_id or personas.default_persona_id
+    for persona in personas.personas:
+        if persona.id == target_id:
+            return persona.system_prompt
+    try:
+        return personas.get_default().system_prompt
+    except ValueError:
+        return None
+
+
+def _shape_context_message(retrieved_chunks: List[RetrievedChunk]) -> Optional[str]:
+    if not retrieved_chunks:
+        return None
+    snippets: List[str] = []
+    for chunk in retrieved_chunks[:3]:
+        snippet = chunk.text.strip()
+        if len(snippet) > 1000:
+            snippet = snippet[:1000] + "..."
+        label = chunk.upload_filename or f"Chunk {chunk.chunk_id}"
+        snippets.append(f"{label}:\n{snippet}")
+    return "Use the following retrieved context when it is relevant:\n\n" + "\n\n".join(snippets)
 
 
 async def _process_user_turn(
@@ -257,6 +270,7 @@ async def _process_user_turn(
     app_config,
     uploads_dir,
     rag_service: RAGService,
+    ollama_service: OllamaService,
     trace_service: TraceService,
     edited_from: str | None = None,
 ):
@@ -295,7 +309,7 @@ async def _process_user_turn(
     stmt_uploads = select(Upload).where(Upload.session_id == chat_session.id)
     existing_uploads = (await db.execute(stmt_uploads)).scalars().all()
 
-    retrieved_chunks = []
+    retrieved_chunks: List[RetrievedChunk] = []
     if chat_session.rag_enabled and existing_uploads:
         retrieved_chunks = await rag_service.retrieve(
             db,
@@ -322,7 +336,32 @@ async def _process_user_turn(
             },
         )
 
-    assistant_text = _build_assistant_reply(content, [chunk.text for chunk in retrieved_chunks])
+    persona_prompt = _resolve_persona_prompt(chat_session.persona_id, app_config)
+    llm_messages: List[Dict[str, str]] = []
+    if persona_prompt:
+        llm_messages.append({"role": "system", "content": persona_prompt})
+
+    context_message = _shape_context_message(retrieved_chunks)
+    if context_message:
+        llm_messages.append({"role": "system", "content": context_message})
+
+    llm_messages.append({"role": "user", "content": content})
+
+    llm_request_payload = {
+        "model": chat_session.model_id,
+        "messages": llm_messages,
+    }
+
+    try:
+        assistant_text = await ollama_service.chat(model=chat_session.model_id, messages=llm_messages)
+        trace_output_payload: Dict[str, object] = {"content": assistant_text}
+    except RuntimeError as exc:
+        assistant_text = (
+            "I couldn't reach the model to craft a response right now. "
+            "Please try again in a moment."
+        )
+        trace_output_payload = {"error": str(exc)}
+
     assistant_message = Message(
         session_id=chat_session.id,
         role="assistant",
@@ -335,7 +374,8 @@ async def _process_user_turn(
         run_id=run.id,
         step_type="model",
         label="Assistant response",
-        output_payload={"content": assistant_text},
+        input_payload=llm_request_payload,
+        output_payload=trace_output_payload,
     )
     await trace_service.finish_run(db, run_id=run.id, status="completed")
     await db.commit()
@@ -357,6 +397,7 @@ async def post_message(
     chat_session = await _get_session_for_user(db, current_user.id, session_id)
     rag_service = get_rag_service()
     trace_service = get_trace_service()
+    ollama_service = get_ollama_service()
     assistant_message, run_id = await _process_user_turn(
         chat_session=chat_session,
         content=content,
@@ -366,6 +407,7 @@ async def post_message(
         app_config=app_config,
         uploads_dir=uploads_dir,
         rag_service=rag_service,
+        ollama_service=ollama_service,
         trace_service=trace_service,
     )
 
@@ -408,6 +450,7 @@ async def edit_message(
 
     rag_service = get_rag_service()
     trace_service = get_trace_service()
+    ollama_service = get_ollama_service()
     assistant_message, run_id = await _process_user_turn(
         chat_session=chat_session,
         content=payload.content,
@@ -417,6 +460,7 @@ async def edit_message(
         app_config=app_config,
         uploads_dir=uploads_dir,
         rag_service=rag_service,
+        ollama_service=ollama_service,
         trace_service=trace_service,
         edited_from=message.id,
     )

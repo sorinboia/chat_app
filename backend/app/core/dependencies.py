@@ -12,6 +12,7 @@ from ..core.config import AppConfig
 from ..models import User
 from ..services.config_loader import ConfigService, create_config_service
 from ..services.mcp import MCPService
+from ..services.ollama import OllamaService
 from ..services.rag import RAGService
 from ..services.tracing import TraceService
 from .database import AsyncSession, get_db_session
@@ -62,6 +63,17 @@ def get_mcp_service() -> MCPService:
     service = get_config_service()
     config = service.get().mcp
     return MCPService(config=config, workspace_root=get_workspace_root())
+
+
+@lru_cache(maxsize=1)
+def get_ollama_service() -> OllamaService:
+    service = get_config_service()
+    models_config = service.get().models
+    return OllamaService(
+        base_url=models_config.ollama.base_url,
+        discover=models_config.ollama.discover_models,
+        fallback_models=[models_config.default_model],
+    )
 
 
 async def get_current_user(
