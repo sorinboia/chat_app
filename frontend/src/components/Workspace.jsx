@@ -203,7 +203,7 @@ export default function Workspace({ user, onLogout }) {
         if (!shell) return;
         const rect = shell.getBoundingClientRect();
         const minWidth = 200;
-        const maxWidth = 1400;
+        const maxWidth = 1800;
         const distance = rect.right - event.clientX;
         const nextWidth = Math.min(Math.max(distance, minWidth), maxWidth);
         setActivityWidth(nextWidth);
