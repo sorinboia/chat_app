@@ -1,5 +1,5 @@
 {
-  "default_model": "llama3.1:8b-instruct",
+  "default_model": "llama3.2:3b",
   "allow_user_switch_per_conversation": true,
   "ollama": {
     "base_url": "http://192.168.0.101:11434",
