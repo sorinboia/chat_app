@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchConfig,
   fetchModels,
@@ -60,7 +60,11 @@ export default function Workspace({ user, onLogout }) {
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [sending, setSending] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const [activityVisible, setActivityVisible] = useState(false);
+  const [activityWidth, setActivityWidth] = useState(380);
+  const [activeResizer, setActiveResizer] = useState(null);
   const [runs, setRuns] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
   const [selectedRunDetails, setSelectedRunDetails] = useState(null);
@@ -69,12 +73,26 @@ export default function Workspace({ user, onLogout }) {
   const [toolArgs, setToolArgs] = useState('{}');
   const [toolResult, setToolResult] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
+  const appShellRef = useRef(null);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || null,
     [sessions, activeSessionId]
   );
   const personaOptions = useMemo(() => config?.personas?.personas || [], [config]);
+  const appShellClasses = useMemo(() => {
+    let classes = 'app-shell';
+    if (activityVisible) classes += ' drawer-open';
+    if (sidebarHidden) classes += ' sidebar-collapsed';
+    if (!activityVisible) classes += ' activity-hidden';
+    return classes;
+  }, [activityVisible, sidebarHidden]);
+  const shellStyle = useMemo(
+    () => ({
+      gridTemplateColumns: `${sidebarHidden ? '0px' : `${sidebarWidth}px`} 1fr ${activityVisible ? `${activityWidth}px` : '0px'}`
+    }),
+    [sidebarHidden, sidebarWidth, activityVisible, activityWidth]
+  );
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -91,6 +109,43 @@ export default function Workspace({ user, onLogout }) {
     loadMessages(activeSessionId);
     loadRuns(activeSessionId);
   }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!activeResizer) return undefined;
+
+    const handlePointerMove = (event) => {
+      event.preventDefault();
+      if (activeResizer === 'left') {
+        const minWidth = 220;
+        const maxWidth = 520;
+        const nextWidth = Math.min(Math.max(event.clientX, minWidth), maxWidth);
+        setSidebarWidth(nextWidth);
+      } else if (activeResizer === 'right') {
+        const shell = appShellRef.current;
+        if (!shell) return;
+        const rect = shell.getBoundingClientRect();
+        const minWidth = 260;
+        const maxWidth = 520;
+        const distance = rect.right - event.clientX;
+        const nextWidth = Math.min(Math.max(distance, minWidth), maxWidth);
+        setActivityWidth(nextWidth);
+      }
+    };
+
+    const handlePointerUp = () => {
+      setActiveResizer(null);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    document.body.classList.add('is-resizing');
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      document.body.classList.remove('is-resizing');
+    };
+  }, [activeResizer]);
 
   const loadSessions = async () => {
     setLoadingSessions(true);
@@ -122,6 +177,26 @@ export default function Workspace({ user, onLogout }) {
       setSelectedRunDetails(null);
     }
   };
+
+  const handleSidebarResizeStart = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveResizer('left');
+  }, []);
+
+  const handleActivityResizeStart = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveResizer('right');
+  }, []);
+
+  const toggleSidebarVisibility = useCallback(() => {
+    setSidebarHidden((prev) => !prev);
+  }, []);
+
+  const toggleActivityVisibility = useCallback(() => {
+    setActivityVisible((prev) => !prev);
+  }, []);
 
   const handleSelectSession = async (sessionId) => {
     setActiveSessionId(sessionId);
@@ -256,11 +331,18 @@ export default function Workspace({ user, onLogout }) {
   );
 
   return (
-    <div className={`app-shell ${drawerOpen ? 'drawer-open' : ''}`}>
-      <aside className="sidebar">
+    <div ref={appShellRef} className={appShellClasses} style={shellStyle}>
+      <aside className="sidebar" aria-hidden={sidebarHidden}>
         <div className="sidebar-header">
           <button className="primary-btn" onClick={handleCreateSession}>
             + New Chat
+          </button>
+          <button
+            className="ghost-btn sidebar-toggle"
+            onClick={toggleSidebarVisibility}
+            aria-label={sidebarHidden ? 'Show chat list' : 'Hide chat list'}
+          >
+            {sidebarHidden ? '⟩' : '⟨'}
           </button>
         </div>
         <div className="sidebar-body">
@@ -275,7 +357,7 @@ export default function Workspace({ user, onLogout }) {
                   className={`session-item ${session.id === activeSessionId ? 'active' : ''}`}
                   onClick={() => handleSelectSession(session.id)}
                   role="button"
-                  tabIndex={0}
+                  tabIndex={sidebarHidden ? -1 : 0}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
@@ -313,15 +395,24 @@ export default function Workspace({ user, onLogout }) {
               ))}
             </div>
           </div>
-          <div className="sidebar-footer">
-            <div className="user-pill">
-              <span>{user?.full_name || user?.email}</span>
-              <button className="icon-btn" onClick={onLogout} title="Logout">
-                ⎋
-              </button>
-            </div>
+        <div className="sidebar-footer">
+          <div className="user-pill">
+            <span>{user?.full_name || user?.email}</span>
+            <button className="icon-btn" onClick={onLogout} title="Logout">
+              ⎋
+            </button>
           </div>
         </div>
+      </div>
+        {!sidebarHidden && (
+          <div
+            className="panel-resizer sidebar-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize chat list"
+            onPointerDown={handleSidebarResizeStart}
+          />
+        )}
       </aside>
 
       <main className="chat-panel">
@@ -385,9 +476,20 @@ export default function Workspace({ user, onLogout }) {
             </div>
           </div>
           <div className="chat-header-right">
-            <button className="secondary-btn" onClick={() => setDrawerOpen((prev) => !prev)}>
-              {drawerOpen ? 'Close Activity' : 'Open Activity'}
-            </button>
+            <div className="layout-switches">
+              <button className="ghost-btn" onClick={toggleSidebarVisibility}>
+                {sidebarHidden ? 'Show Chats' : 'Hide Chats'}
+              </button>
+              <button className="ghost-btn" onClick={toggleActivityVisibility}>
+                {activityVisible ? 'Hide Activity' : 'Show Activity'}
+              </button>
+            </div>
+            <div className="header-user">
+              <span>{user?.full_name || user?.email}</span>
+              <button className="icon-btn" onClick={onLogout} title="Logout">
+                ⎋
+              </button>
+            </div>
           </div>
         </header>
 
@@ -520,7 +622,7 @@ export default function Workspace({ user, onLogout }) {
         </footer>
       </main>
 
-      <aside className="activity-drawer">
+      <aside className="activity-drawer" aria-hidden={!activityVisible}>
         <div className="drawer-header">
           <h2>Internal Activity</h2>
         </div>
@@ -560,6 +662,15 @@ export default function Workspace({ user, onLogout }) {
             <div className="muted">Select a run to inspect details.</div>
           )}
         </div>
+        {activityVisible && (
+          <div
+            className="panel-resizer activity-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize activity panel"
+            onPointerDown={handleActivityResizeStart}
+          />
+        )}
       </aside>
     </div>
   );
