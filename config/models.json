@@ -4,7 +4,8 @@
   "ollama": {
     "base_url": "http://192.168.0.101:11434",
     "discover_models": true,
-    "prepull": []
+    "prepull": [],
+    "request_timeout_seconds": 120
   },
   "thinking_models_allowed": true
 }

@@ -12,6 +12,11 @@ class OllamaConfig(BaseModel):
     base_url: str = Field(..., description="Base URL for the Ollama service")
     discover_models: bool = Field(True, description="Whether to discover models dynamically")
     prepull: List[str] = Field(default_factory=list, description="Optional list of models to pre-pull")
+    request_timeout_seconds: float = Field(
+        120,
+        ge=1,
+        description="Timeout in seconds for Ollama HTTP requests",
+    )
 
 
 class ModelsConfig(BaseModel):

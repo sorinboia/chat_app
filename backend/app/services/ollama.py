@@ -6,17 +6,24 @@ import httpx
 
 
 class OllamaService:
-    def __init__(self, base_url: str, discover: bool = True, fallback_models: List[str] | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        discover: bool = True,
+        fallback_models: List[str] | None = None,
+        timeout_seconds: float = 120,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.discover = discover
         self.fallback_models = fallback_models or []
+        self.timeout_seconds = timeout_seconds
 
     async def list_models(self) -> List[Dict[str, Any]]:
         if not self.discover:
             return [self._format_model(name) for name in self.fallback_models]
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.get(f"{self.base_url}/api/tags")
                 response.raise_for_status()
                 data = response.json()
@@ -45,7 +52,7 @@ class OllamaService:
             payload["options"] = options
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.post(f"{self.base_url}/api/chat", json=payload)
                 response.raise_for_status()
                 data = response.json()
