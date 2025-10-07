@@ -75,6 +75,8 @@ export default function Workspace({ user, onLogout }) {
   const [statusMessage, setStatusMessage] = useState(null);
   const appShellRef = useRef(null);
   const sendAbortControllerRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const previousMessageCountRef = useRef(0);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || null,
@@ -109,6 +111,36 @@ export default function Workspace({ user, onLogout }) {
     loadMessages(activeSessionId);
     loadRuns(activeSessionId);
   }, [activeSessionId]);
+
+  const scrollMessagesToBottom = useCallback(
+    (behavior = 'auto') => {
+      const container = messagesContainerRef.current;
+      if (!container) return;
+      const performScroll = () => {
+        container.scrollTo({ top: container.scrollHeight, behavior });
+      };
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(performScroll);
+      } else {
+        performScroll();
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    previousMessageCountRef.current = 0;
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!messages.length) {
+      previousMessageCountRef.current = 0;
+      return;
+    }
+    const behavior = previousMessageCountRef.current ? 'smooth' : 'auto';
+    scrollMessagesToBottom(behavior);
+    previousMessageCountRef.current = messages.length;
+  }, [messages, scrollMessagesToBottom]);
 
   useEffect(() => {
     if (!activeResizer) return undefined;
@@ -590,7 +622,7 @@ export default function Workspace({ user, onLogout }) {
           </div>
         </section>
 
-        <section className="messages" aria-live="polite">
+        <section ref={messagesContainerRef} className="messages" aria-live="polite">
           {visibleMessages.length === 0 && (
             <div className="empty-state">
               <div className="empty-illustration">💬</div>

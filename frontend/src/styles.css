@@ -265,9 +265,11 @@ body.is-resizing * {
 .chat-panel {
   display: flex;
   flex-direction: column;
+  height: 100vh;
   min-height: 100vh;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(247, 248, 252, 0.92) 45%, rgba(240, 242, 248, 0.95) 100%);
   border-right: 1px solid var(--border);
+  overflow: hidden;
 }
 
 .chat-panel.is-disabled {
@@ -322,6 +324,12 @@ body.is-resizing * {
   align-items: center;
   padding: 1.75rem 2rem 1.5rem;
   border-bottom: 1px solid rgba(220, 224, 232, 0.6);
+}
+
+.chat-header,
+.control-surfaces,
+.composer {
+  flex-shrink: 0;
 }
 
 .chat-title {
