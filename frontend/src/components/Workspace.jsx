@@ -20,6 +20,35 @@ function formatDate(value) {
   return new Date(value).toLocaleString();
 }
 
+function getRoleLabel(role) {
+  switch (role) {
+    case 'user':
+      return 'You';
+    case 'assistant':
+      return 'Assistant';
+    case 'tool':
+      return 'Tool';
+    case 'system':
+      return 'System';
+    default:
+      return role;
+  }
+}
+
+function getAvatarGlyph(role, user) {
+  if (role === 'user') {
+    const source = user?.full_name || user?.email || 'You';
+    return source.trim().slice(0, 1).toUpperCase();
+  }
+  if (role === 'assistant') {
+    return 'AI';
+  }
+  if (role === 'tool') {
+    return '🔧';
+  }
+  return 'ℹ️';
+}
+
 export default function Workspace({ user, onLogout }) {
   const [config, setConfig] = useState(null);
   const [models, setModels] = useState([]);
@@ -45,6 +74,7 @@ export default function Workspace({ user, onLogout }) {
     () => sessions.find((session) => session.id === activeSessionId) || null,
     [sessions, activeSessionId]
   );
+  const personaOptions = useMemo(() => config?.personas?.personas || [], [config]);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -229,108 +259,61 @@ export default function Workspace({ user, onLogout }) {
     <div className={`app-shell ${drawerOpen ? 'drawer-open' : ''}`}>
       <aside className="sidebar">
         <div className="sidebar-header">
-          <h2>Sessions</h2>
-          <button className="secondary-btn" onClick={handleCreateSession}>
+          <button className="primary-btn" onClick={handleCreateSession}>
             + New Chat
           </button>
         </div>
-        <div className="session-list">
-          {loadingSessions && <div className="muted">Loading sessions…</div>}
-          {!loadingSessions && sessions.length === 0 && <div className="muted">No sessions yet.</div>}
-          {sessions.map((session) => (
-            <div
-              key={session.id}
-              className={`session-item ${session.id === activeSessionId ? 'active' : ''}`}
-              onClick={() => handleSelectSession(session.id)}
-            >
-              <div>
-                <div className="session-title">{session.title}</div>
-                <div className="session-meta">{formatDate(session.created_at)}</div>
-              </div>
-              <div className="session-actions">
-                <button
-                  className="icon-btn"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleRenameSession(session.id);
+        <div className="sidebar-body">
+          <div className="sidebar-section">
+            <h2 className="sidebar-title">Chats</h2>
+            <div className="session-list">
+              {loadingSessions && <div className="muted">Loading sessions…</div>}
+              {!loadingSessions && sessions.length === 0 && <div className="muted">No sessions yet.</div>}
+              {sessions.map((session) => (
+                <div
+                  key={session.id}
+                  className={`session-item ${session.id === activeSessionId ? 'active' : ''}`}
+                  onClick={() => handleSelectSession(session.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleSelectSession(session.id);
+                    }
                   }}
-                  aria-label="Rename session"
                 >
-                  ✎
-                </button>
-                <button
-                  className="icon-btn"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleDeleteSession(session.id);
-                  }}
-                  aria-label="Delete session"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </aside>
-
-      <main className="chat-panel">
-        <header className="chat-header">
-          <div className="chat-header-left">
-            <h1>{activeSession?.title || 'Select a session'}</h1>
-            <div className="toggles">
-              <label>
-                Model
-                <select
-                  value={activeSession?.model_id || ''}
-                  onChange={(event) => handleSessionFieldChange(activeSessionId, { model_id: event.target.value })}
-                  disabled={!activeSession}
-                >
-                  {models.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Persona
-                <select
-                  value={activeSession?.persona_id || ''}
-                  onChange={(event) => handleSessionFieldChange(activeSessionId, { persona_id: event.target.value })}
-                  disabled={!activeSession}
-                >
-                  {config?.personas?.personas?.map((persona) => (
-                    <option key={persona.id} value={persona.id}>
-                      {persona.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="toggle-label">
-                <input
-                  type="checkbox"
-                  checked={activeSession?.rag_enabled || false}
-                  onChange={(event) => handleSessionFieldChange(activeSessionId, { rag_enabled: event.target.checked })}
-                  disabled={!activeSession}
-                />
-                RAG Enabled
-              </label>
-              <label className="toggle-label">
-                <input
-                  type="checkbox"
-                  checked={activeSession?.streaming_enabled || false}
-                  onChange={(event) => handleSessionFieldChange(activeSessionId, { streaming_enabled: event.target.checked })}
-                  disabled={!activeSession}
-                />
-                Streaming
-              </label>
+                  <div>
+                    <div className="session-title">{session.title}</div>
+                    <div className="session-meta">{formatDate(session.created_at)}</div>
+                  </div>
+                  <div className="session-actions">
+                    <button
+                      className="icon-btn"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleRenameSession(session.id);
+                      }}
+                      aria-label="Rename session"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      className="icon-btn"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeleteSession(session.id);
+                      }}
+                      aria-label="Delete session"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="chat-header-right">
-            <button className="secondary-btn" onClick={() => setDrawerOpen((prev) => !prev)}>
-              {drawerOpen ? 'Close Activity' : 'Open Activity'}
-            </button>
+          <div className="sidebar-footer">
             <div className="user-pill">
               <span>{user?.full_name || user?.email}</span>
               <button className="icon-btn" onClick={onLogout} title="Logout">
@@ -338,107 +321,199 @@ export default function Workspace({ user, onLogout }) {
               </button>
             </div>
           </div>
+        </div>
+      </aside>
+
+      <main className="chat-panel">
+        <header className="chat-header">
+          <div className="chat-header-left">
+            <div className="chat-title">
+              <div className="session-pill">{activeSession ? 'Active Chat' : 'Welcome'}</div>
+              <h1>{activeSession?.title || 'Select or create a chat'}</h1>
+            </div>
+            <div className="chat-toolbar">
+              <div className="toolbar-group">
+                <label>
+                  Model
+                  <select
+                    value={activeSession?.model_id || ''}
+                    onChange={(event) => handleSessionFieldChange(activeSessionId, { model_id: event.target.value })}
+                    disabled={!activeSession}
+                  >
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Persona
+                  <select
+                    value={activeSession?.persona_id || ''}
+                    onChange={(event) => handleSessionFieldChange(activeSessionId, { persona_id: event.target.value })}
+                    disabled={!activeSession}
+                  >
+                    {personaOptions.map((persona) => (
+                      <option key={persona.id} value={persona.id}>
+                        {persona.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="toolbar-group">
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={activeSession?.rag_enabled || false}
+                    onChange={(event) => handleSessionFieldChange(activeSessionId, { rag_enabled: event.target.checked })}
+                    disabled={!activeSession}
+                  />
+                  RAG Enabled
+                </label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={activeSession?.streaming_enabled || false}
+                    onChange={(event) => handleSessionFieldChange(activeSessionId, { streaming_enabled: event.target.checked })}
+                    disabled={!activeSession}
+                  />
+                  Streaming
+                </label>
+              </div>
+            </div>
+          </div>
+          <div className="chat-header-right">
+            <button className="secondary-btn" onClick={() => setDrawerOpen((prev) => !prev)}>
+              {drawerOpen ? 'Close Activity' : 'Open Activity'}
+            </button>
+          </div>
         </header>
 
-        <section className="mcp-controls">
-          <h3>MCP Servers</h3>
-          <div className="mcp-grid">
-            {availableServers.map((server) => (
-              <label key={server.name} className="toggle-label">
-                <input
-                  type="checkbox"
-                  checked={activeSession?.enabled_mcp_servers?.includes(server.name) || false}
-                  onChange={(event) => {
-                    const enabled = new Set(activeSession?.enabled_mcp_servers || []);
-                    if (event.target.checked) {
-                      enabled.add(server.name);
-                    } else {
-                      enabled.delete(server.name);
-                    }
-                    handleSessionFieldChange(activeSessionId, { enabled_mcp_servers: Array.from(enabled) });
-                  }}
-                  disabled={!activeSession}
-                />
-                {server.name} <span className="muted">({server.transport})</span>
-              </label>
-            ))}
-          </div>
-          <div className="tool-runner">
-            <div className="tool-row">
-              <label>
-                Server
-                <select value={toolServer} onChange={(event) => setToolServer(event.target.value)}>
-                  <option value="">Select server</option>
-                  {(activeSession?.enabled_mcp_servers || []).map((serverName) => (
-                    <option key={serverName} value={serverName}>
-                      {serverName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Tool
-                <input
-                  type="text"
-                  value={toolName}
-                  onChange={(event) => setToolName(event.target.value)}
-                  placeholder="list_directory"
-                />
-              </label>
+        <section className="control-surfaces">
+          <div className="panel">
+            <div className="panel-header">
+              <h3>MCP Servers</h3>
+              <span className="muted">Toggle and run tools for the active chat.</span>
             </div>
-            <label>
-              Arguments (JSON)
-              <textarea
-                rows={3}
-                value={toolArgs}
-                onChange={(event) => setToolArgs(event.target.value)}
-                placeholder='{"path": "."}'
-              />
-            </label>
-            <div className="tool-actions">
-              <button className="secondary-btn" onClick={handleExecuteTool} disabled={!activeSession}>
-                Run Tool
-              </button>
-              {toolResult && <pre className="tool-output">{JSON.stringify(toolResult, null, 2)}</pre>}
+            <div className="mcp-grid">
+              {availableServers.map((server) => (
+                <label key={server.name} className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={activeSession?.enabled_mcp_servers?.includes(server.name) || false}
+                    onChange={(event) => {
+                      const enabled = new Set(activeSession?.enabled_mcp_servers || []);
+                      if (event.target.checked) {
+                        enabled.add(server.name);
+                      } else {
+                        enabled.delete(server.name);
+                      }
+                      handleSessionFieldChange(activeSessionId, { enabled_mcp_servers: Array.from(enabled) });
+                    }}
+                    disabled={!activeSession}
+                  />
+                  {server.name} <span className="muted">({server.transport})</span>
+                </label>
+              ))}
+            </div>
+            <div className="tool-runner">
+              <div className="tool-row">
+                <label>
+                  Server
+                  <select value={toolServer} onChange={(event) => setToolServer(event.target.value)}>
+                    <option value="">Select server</option>
+                    {(activeSession?.enabled_mcp_servers || []).map((serverName) => (
+                      <option key={serverName} value={serverName}>
+                        {serverName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Tool
+                  <input
+                    type="text"
+                    value={toolName}
+                    onChange={(event) => setToolName(event.target.value)}
+                    placeholder="list_directory"
+                  />
+                </label>
+              </div>
+              <label>
+                Arguments (JSON)
+                <textarea
+                  rows={3}
+                  value={toolArgs}
+                  onChange={(event) => setToolArgs(event.target.value)}
+                  placeholder='{"path": "."}'
+                />
+              </label>
+              <div className="tool-actions">
+                <button className="secondary-btn" onClick={handleExecuteTool} disabled={!activeSession}>
+                  Run Tool
+                </button>
+              </div>
+              {toolResult && (
+                <pre className="tool-output">{JSON.stringify(toolResult, null, 2)}</pre>
+              )}
             </div>
           </div>
         </section>
 
-        <section className="messages">
-          {visibleMessages.map((message) => (
-            <div key={message.id} className={`message ${message.role}`}>
-              <div className="message-meta">
-                <span className="role">{message.role}</span>
-                <span className="timestamp">{formatDate(message.created_at)}</span>
-                {message.edited_from_message_id && <span className="pill">Edited</span>}
-              </div>
-              <div className="message-content">{message.content}</div>
+        <section className="messages" aria-live="polite">
+          {visibleMessages.length === 0 && (
+            <div className="empty-state">
+              <div className="empty-illustration">💬</div>
+              <h3>Start the conversation</h3>
+              <p className="muted">Send a prompt to see model responses, trace tools, and RAG activity.</p>
             </div>
+          )}
+          {visibleMessages.map((message) => (
+            <article key={message.id} className={`message ${message.role}`}>
+              <div className="message-avatar" aria-hidden="true">
+                {getAvatarGlyph(message.role, user)}
+              </div>
+              <div className="message-body">
+                <header className="message-header">
+                  <span className="message-author">{getRoleLabel(message.role)}</span>
+                  <span className="timestamp">{formatDate(message.created_at)}</span>
+                  {message.edited_from_message_id && <span className="pill">Edited</span>}
+                </header>
+                <div className="message-content">{message.content}</div>
+              </div>
+            </article>
           ))}
         </section>
 
         <footer className="composer">
           {statusMessage && <div className="status-banner">{statusMessage}</div>}
-          <textarea
-            value={composerText}
-            onChange={(event) => setComposerText(event.target.value)}
-            placeholder="Ask something or provide instructions…"
-            rows={4}
-          />
-          <div className="composer-row">
-            <input type="file" multiple onChange={handleFileChange} />
-            <div className="composer-actions">
-              {!editingMessageId ? (
-                <button className="secondary-btn" onClick={handleStartEditing} disabled={!messages.length}>
-                  Edit Last Message
-                </button>
-              ) : (
-                <button className="secondary-btn" onClick={handleCancelEditing}>
-                  Cancel Edit
-                </button>
-              )}
+          <div className="composer-shell">
+            <textarea
+              value={composerText}
+              onChange={(event) => setComposerText(event.target.value)}
+              placeholder="Send a message..."
+              rows={3}
+            />
+            <div className="composer-footer">
+              <div className="composer-left">
+                <label className="upload-btn">
+                  <span>＋ Attach</span>
+                  <input type="file" multiple onChange={handleFileChange} />
+                </label>
+                {!editingMessageId ? (
+                  <button className="ghost-btn" onClick={handleStartEditing} disabled={!messages.length}>
+                    Edit Last Message
+                  </button>
+                ) : (
+                  <button className="ghost-btn" onClick={handleCancelEditing}>
+                    Cancel Edit
+                  </button>
+                )}
+              </div>
               <button className="primary-btn" onClick={handleSendMessage} disabled={sending || !activeSessionId}>
-                {sending ? 'Sending…' : editingMessageId ? 'Resend Message' : 'Send Message'}
+                {sending ? 'Sending…' : editingMessageId ? 'Resend' : 'Send'}
               </button>
             </div>
           </div>
