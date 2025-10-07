@@ -669,8 +669,6 @@ input[type="text"]:focus {
 
 .activity-drawer {
   width: 380px;
-  transform: translateX(100%);
-  transition: transform 0.25s ease;
   background: rgba(255, 255, 255, 0.96);
   border-left: 1px solid rgba(220, 224, 232, 0.6);
   backdrop-filter: blur(16px);
