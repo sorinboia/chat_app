@@ -1,6 +1,14 @@
 {
   "servers": [
     {
+      "name": "playwright",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"],
+      "requires_api_key": false,
+      "enabled_by_default": false
+    },
+    {
       "name": "filesystem-tools",
       "transport": "stdio",
       "command": "python",
@@ -24,5 +32,6 @@
       "enabled_by_default": false,
       "auth_key_name": "ANALYTICS_ST_API_KEY"
     }
+    
   ]
 }
