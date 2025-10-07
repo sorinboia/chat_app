@@ -546,13 +546,19 @@ export default function Workspace({ user, onLogout }) {
           </aside>
           {!sidebarHidden && (
             <div
-              className="absolute top-1/2 right-[-14px] z-30 flex h-24 w-1 -translate-y-1/2 rounded-full bg-white/35 transition hover:bg-brand-primary/80"
+              className="absolute top-1/2 right-[-22px] z-30 flex -translate-y-1/2"
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize chat list"
               onPointerDown={handleSidebarResizeStart}
               style={{ cursor: 'col-resize' }}
-            />
+            >
+              <div className="flex h-24 w-6 items-center justify-center rounded-full border border-white/40 bg-white/70 text-slate-400 shadow-sm transition hover:border-brand-primary hover:bg-brand-primary/20 hover:text-brand-primary">
+                <span aria-hidden="true" className="text-sm font-semibold tracking-wide">
+                  ||
+                </span>
+              </div>
+            </div>
           )}
         </div>
         <main
@@ -754,13 +760,19 @@ export default function Workspace({ user, onLogout }) {
           </footer>
           {activityVisible && (
             <div
-              className="absolute top-1/2 right-[-14px] z-30 flex h-24 w-1 -translate-y-1/2 rounded-full bg-slate-200 transition hover:bg-brand-primary/60"
+              className="absolute top-1/2 right-[-22px] z-30 flex -translate-y-1/2"
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize activity panel"
               onPointerDown={handleActivityResizeStart}
               style={{ cursor: 'col-resize' }}
-            />
+            >
+              <div className="flex h-24 w-6 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-400 shadow-sm transition hover:border-brand-primary hover:bg-brand-primary/10 hover:text-brand-primary">
+                <span aria-hidden="true" className="text-sm font-semibold tracking-wide">
+                  ||
+                </span>
+              </div>
+            </div>
           )}
         </main>
         <div
