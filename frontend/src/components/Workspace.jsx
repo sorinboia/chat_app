@@ -82,7 +82,6 @@ export default function Workspace({ user, onLogout }) {
   const personaOptions = useMemo(() => config?.personas?.personas || [], [config]);
   const appShellClasses = useMemo(() => {
     let classes = 'app-shell';
-    if (activityVisible) classes += ' drawer-open';
     if (sidebarHidden) classes += ' sidebar-collapsed';
     if (!activityVisible) classes += ' activity-hidden';
     return classes;
