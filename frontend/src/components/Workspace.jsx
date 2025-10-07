@@ -121,15 +121,8 @@ export default function Workspace({ user, onLogout }) {
     return 'bg-slate-200 text-slate-600';
   }, []);
   const appShellClasses = useMemo(
-    () =>
-      'grid min-h-screen gap-6 px-6 py-6 xl:px-10 xl:py-8 transition-[grid-template-columns] duration-300',
+    () => 'relative flex min-h-screen gap-6 px-6 py-6 xl:px-10 xl:py-8',
     []
-  );
-  const shellStyle = useMemo(
-    () => ({
-      gridTemplateColumns: `${sidebarHidden ? '0px' : `${sidebarWidth}px`} 1fr ${activityVisible ? `${activityWidth}px` : '0px'}`
-    }),
-    [sidebarHidden, sidebarWidth, activityVisible, activityWidth]
   );
 
   useEffect(() => {
@@ -456,111 +449,114 @@ export default function Workspace({ user, onLogout }) {
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[32rem] bg-[radial-gradient(circle_at_top,_rgba(226,29,56,0.16),_transparent_65%)]"
       />
-      <div ref={appShellRef} className={appShellClasses} style={shellStyle}>
-        <aside
-          className={classNames(
-            'flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950/90 text-white shadow-card backdrop-blur transition-opacity duration-200',
-            sidebarHidden && 'pointer-events-none opacity-0'
-          )}
-          aria-hidden={sidebarHidden}
+      <div ref={appShellRef} className={appShellClasses}>
+        <div
+          className="relative flex h-full overflow-visible transition-[width,opacity] duration-300"
+          style={{ width: sidebarHidden ? '0px' : `${sidebarWidth}px` }}
         >
-          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-6 py-5">
-            <button className={buttonStyles.primary} onClick={handleCreateSession}>
-              + New Chat
-            </button>
-            <button
-              className={buttonStyles.icon}
-              onClick={toggleSidebarVisibility}
-              aria-label={sidebarHidden ? 'Show chat list' : 'Hide chat list'}
-            >
-              <span aria-hidden="true">{sidebarHidden ? '⟩' : '⟨'}</span>
-            </button>
-          </div>
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.35em] text-white/55">Chats</h2>
-              {loadingSessions && <span className="text-xs text-white/50">Loading…</span>}
-            </div>
-            <div className="flex-1 space-y-2 overflow-y-auto px-6 pb-6">
-              {!loadingSessions && sessions.length === 0 && (
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-sm text-white/70 shadow-inner">
-                  Create a new chat to get started.
-                </div>
-              )}
-              {sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className={classNames(
-                    'group flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-brand-primary/40 hover:bg-brand-primary/20 hover:text-white focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-white/70',
-                    session.id === activeSessionId && 'border-brand-primary/60 bg-brand-primary/25 shadow-lg shadow-brand-primary/20'
-                  )}
-                  onClick={() => handleSelectSession(session.id)}
-                  role="button"
-                  tabIndex={sidebarHidden ? -1 : 0}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      handleSelectSession(session.id);
-                    }
-                  }}
-                >
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm font-semibold">{session.title}</span>
-                    <span className="text-xs text-white/60">{formatDate(session.created_at)}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base text-white/70 transition hover:border-white/30 hover:text-white"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleRenameSession(session.id);
-                      }}
-                      aria-label="Rename session"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base text-white/70 transition hover:border-brand-primary/60 hover:text-brand-primary"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleDeleteSession(session.id);
-                      }}
-                      aria-label="Delete session"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="border-t border-white/10 bg-white/5 px-6 py-4">
-            <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-sm">
-              <span className="truncate text-white/80">{user?.full_name || user?.email}</span>
+          <aside
+            className={classNames(
+              'flex h-full flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950/90 text-white shadow-card backdrop-blur transition-opacity duration-200',
+              sidebarHidden && 'pointer-events-none opacity-0'
+            )}
+            aria-hidden={sidebarHidden}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-white/10 px-6 py-5">
+              <button className={buttonStyles.primary} onClick={handleCreateSession}>
+                + New Chat
+              </button>
               <button
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base text-white/70 transition hover:border-brand-primary/60 hover:text-brand-primary"
-                onClick={onLogout}
-                title="Logout"
+                className={buttonStyles.icon}
+                onClick={toggleSidebarVisibility}
+                aria-label={sidebarHidden ? 'Show chat list' : 'Hide chat list'}
               >
-                ⎋
+                <span aria-hidden="true">{sidebarHidden ? '⟩' : '⟨'}</span>
               </button>
             </div>
-          </div>
-        </aside>
-        {!sidebarHidden && (
-          <div className="flex items-center justify-center">
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4">
+                <h2 className="text-xs font-semibold uppercase tracking-[0.35em] text-white/55">Chats</h2>
+                {loadingSessions && <span className="text-xs text-white/50">Loading…</span>}
+              </div>
+              <div className="flex-1 space-y-2 overflow-y-auto px-6 pb-6">
+                {!loadingSessions && sessions.length === 0 && (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-sm text-white/70 shadow-inner">
+                    Create a new chat to get started.
+                  </div>
+                )}
+                {sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className={classNames(
+                      'group flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-brand-primary/40 hover:bg-brand-primary/20 hover:text-white focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-white/70',
+                      session.id === activeSessionId && 'border-brand-primary/60 bg-brand-primary/25 shadow-lg shadow-brand-primary/20'
+                    )}
+                    onClick={() => handleSelectSession(session.id)}
+                    role="button"
+                    tabIndex={sidebarHidden ? -1 : 0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleSelectSession(session.id);
+                      }
+                    }}
+                  >
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm font-semibold">{session.title}</span>
+                      <span className="text-xs text-white/60">{formatDate(session.created_at)}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base text-white/70 transition hover:border-white/30 hover:text-white"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleRenameSession(session.id);
+                        }}
+                        aria-label="Rename session"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base text-white/70 transition hover:border-brand-primary/60 hover:text-brand-primary"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleDeleteSession(session.id);
+                        }}
+                        aria-label="Delete session"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="border-t border-white/10 bg-white/5 px-6 py-4">
+              <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-sm">
+                <span className="truncate text-white/80">{user?.full_name || user?.email}</span>
+                <button
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base text-white/70 transition hover:border-brand-primary/60 hover:text-brand-primary"
+                  onClick={onLogout}
+                  title="Logout"
+                >
+                  ⎋
+                </button>
+              </div>
+            </div>
+          </aside>
+          {!sidebarHidden && (
             <div
-              className="h-24 w-1 rounded-full bg-white/30 transition hover:bg-brand-primary/80"
+              className="absolute top-1/2 right-[-14px] z-30 flex h-24 w-1 -translate-y-1/2 rounded-full bg-white/35 transition hover:bg-brand-primary/80"
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize chat list"
               onPointerDown={handleSidebarResizeStart}
               style={{ cursor: 'col-resize' }}
             />
-          </div>
-        )}
+          )}
+        </div>
         <main
-          className="glass-card flex min-h-[calc(100vh-3rem)] flex-col overflow-hidden border border-white/50 bg-white/80 shadow-card"
+          className="glass-card relative flex min-h-[calc(100vh-3rem)] flex-1 flex-col overflow-hidden border border-white/50 bg-white/80 shadow-card"
           aria-busy={sending}
         >
           <header className="flex flex-col gap-6 border-b border-slate-200/70 px-8 py-6 backdrop-blur">
@@ -756,85 +752,88 @@ export default function Workspace({ user, onLogout }) {
               </div>
             </div>
           </footer>
-        </main>
-        {activityVisible && (
-          <div className="flex items-center justify-center">
+          {activityVisible && (
             <div
-              className="h-24 w-1 rounded-full bg-slate-200 transition hover:bg-brand-primary/60"
+              className="absolute top-1/2 right-[-14px] z-30 flex h-24 w-1 -translate-y-1/2 rounded-full bg-slate-200 transition hover:bg-brand-primary/60"
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize activity panel"
               onPointerDown={handleActivityResizeStart}
               style={{ cursor: 'col-resize' }}
             />
-          </div>
-        )}
-        <aside
-          className={classNames(
-            'flex flex-col overflow-hidden rounded-3xl border border-white/60 bg-white/75 shadow-card backdrop-blur transition-opacity duration-200',
-            !activityVisible && 'pointer-events-none opacity-0'
           )}
-          aria-hidden={!activityVisible}
+        </main>
+        <div
+          className="relative flex h-full overflow-visible transition-[width,opacity] duration-300"
+          style={{ width: activityVisible ? `${activityWidth}px` : '0px' }}
         >
-          <div className="border-b border-slate-200/70 bg-white/80 px-6 py-5">
-            <h2 className="text-lg font-semibold text-slate-900">Internal Activity</h2>
-            <p className="text-sm text-slate-500">Inspect retrieval, tools, and prompts per run.</p>
-          </div>
-          <div className="flex flex-1 flex-col">
-            <div className="max-h-60 space-y-3 overflow-y-auto px-6 py-4">
-              {runs.map((run) => (
-                <button
-                  key={run.id}
-                  className={classNames(
-                    'w-full rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-left text-sm shadow-sm transition hover:border-brand-primary/40 hover:bg-white',
-                    selectedRun?.id === run.id && 'border-brand-primary/60 bg-brand-primary/10 text-brand-primary'
-                  )}
-                  onClick={() => handleSelectRun(run)}
-                >
-                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
-                    <span>{run.status.toUpperCase()}</span>
-                    <span>{formatDate(run.started_at)}</span>
-                  </div>
-                  <div className="mt-1 text-sm font-semibold text-slate-700">{run.model_id || 'model'}</div>
-                </button>
-              ))}
+          <aside
+            className={classNames(
+              'flex h-full flex-1 flex-col overflow-hidden rounded-3xl border border-white/60 bg-white/75 shadow-card backdrop-blur transition-opacity duration-200',
+              !activityVisible && 'pointer-events-none opacity-0'
+            )}
+            aria-hidden={!activityVisible}
+          >
+            <div className="border-b border-slate-200/70 bg-white/80 px-6 py-5">
+              <h2 className="text-lg font-semibold text-slate-900">Internal Activity</h2>
+              <p className="text-sm text-slate-500">Inspect retrieval, tools, and prompts per run.</p>
             </div>
-            <div className="flex-1 overflow-y-auto px-6 py-6">
-              {selectedRunDetails ? (
-                <div className="space-y-4">
-                  <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Run Timeline</h3>
-                  <div className="space-y-3">
-                    {selectedRunDetails.steps.map((step) => (
-                      <div key={step.id} className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                            {step.type}
-                          </span>
-                          <span>{formatDate(step.ts)}</span>
+            <div className="flex flex-1 flex-col">
+              <div className="max-h-60 space-y-3 overflow-y-auto px-6 py-4">
+                {runs.map((run) => (
+                  <button
+                    key={run.id}
+                    className={classNames(
+                      'w-full rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-left text-sm shadow-sm transition hover:border-brand-primary/40 hover:bg-white',
+                      selectedRun?.id === run.id && 'border-brand-primary/60 bg-brand-primary/10 text-brand-primary'
+                    )}
+                    onClick={() => handleSelectRun(run)}
+                  >
+                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
+                      <span>{run.status.toUpperCase()}</span>
+                      <span>{formatDate(run.started_at)}</span>
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-700">{run.model_id || 'model'}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 py-6">
+                {selectedRunDetails ? (
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Run Timeline</h3>
+                    <div className="space-y-3">
+                      {selectedRunDetails.steps.map((step) => (
+                        <div key={step.id} className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                              {step.type}
+                            </span>
+                            <span>{formatDate(step.ts)}</span>
+                          </div>
+                          {step.label && <div className="mt-2 text-sm font-semibold text-slate-700">{step.label}</div>}
+                          {step.input_json && (
+                            <pre className="mt-2 max-h-60 overflow-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                              {JSON.stringify(step.input_json, null, 2)}
+                            </pre>
+                          )}
+                          {step.output_json && (
+                            <pre className="mt-2 max-h-60 overflow-auto rounded-xl border border-slate-200 bg-slate-900/90 px-3 py-2 text-xs text-white/80">
+                              {JSON.stringify(step.output_json, null, 2)}
+                            </pre>
+                          )}
                         </div>
-                        {step.label && <div className="mt-2 text-sm font-semibold text-slate-700">{step.label}</div>}
-                        {step.input_json && (
-                          <pre className="mt-2 max-h-60 overflow-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                            {JSON.stringify(step.input_json, null, 2)}
-                          </pre>
-                        )}
-                        {step.output_json && (
-                          <pre className="mt-2 max-h-60 overflow-auto rounded-xl border border-slate-200 bg-slate-900/90 px-3 py-2 text-xs text-white/80">
-                            {JSON.stringify(step.output_json, null, 2)}
-                          </pre>
-                        )}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-8 text-sm text-slate-500">
-                  Select a run to inspect details.
-                </div>
-              )}
+                ) : (
+                  <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-8 text-sm text-slate-500">
+                    Select a run to inspect details.
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </aside>
+          </aside>
+        </div>
       </div>
       {isMcpModalOpen && (
         <div
