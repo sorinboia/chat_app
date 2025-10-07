@@ -1,0 +1,241 @@
+# Product Requirements Document (PRD)
+
+**Product:** AI Chatbot Demo App  
+**Audience:** Solutions Engineers / technical users  
+**Prepared:** 2025-10-06
+
+---
+
+## 1) Overview
+**Goals:** Showcase (a) model switching (incl. “thinking” models via Ollama), (b) MCP tool use across transports (stdio / SSE / streamtable HTTP), (c) RAG over local files, and (d) clear, inspectable execution traces.
+
+## 2) Success Criteria
+- A user can: log in, upload docs, start chats, toggle RAG, pick an LLM and MCP servers per conversation, and view a detailed internal activity page.  
+- All config is admin-defined JSON under `/config/*.json` and loaded at startup (fail-fast on invalid schema).  
+- Runs locally and via `docker-compose`.  
+- Branding uses F5 colors (primary red **#E21D38** and white).
+
+## 3) Non-Goals
+- No SSO/OAuth (email+password only).  
+- No moderation/filters.  
+- No analytics/audit dashboards.  
+- No side-by-side model compare in MVP.
+
+## 4) User Roles
+- Single role for MVP (all users identical).
+
+## 5) Platforms & Tech
+- **Frontend:** React + Vite (JS), no TypeScript.  
+- **Backend:** FastAPI (async); streaming support available but **disabled by default** (user-toggle per chat).  
+- **LLMs:** Ollama (discover models at runtime; support “thinking” variants).  
+- **RAG:** SQLite + vector extension (e.g., `sqlite-vec`/`sqlite-vss`).  
+- **MCP:** transports = stdio, SSE (Server-Sent Events), and streamtable HTTP.
+
+## 6) Authentication & Security (Demo-Level)
+- **Login:** email + password (local).  
+- **Passwords:** hashed (bcrypt).  
+- **JWT:** stateless, HMAC-signed; access token lifetime **24h**; no refresh tokens.  
+- **CORS:** allow all (demo).  
+- **Secrets:** `/config/secrets.json`.  
+- **No lockouts / no password policy**.
+
+## 7) Data & Storage
+- **SQLite** (single file): `app.db`  
+- **File storage:** `/data/uploads`  
+- **RAG index:** SQLite tables inside `app.db` (no separate cap).  
+- **Retention:** local-only; no auto-delete; user can manually delete files/chats.
+
+### 7.1 Database Schema (Initial)
+- `users`(id, email [unique], password_hash, full_name, title, team, avatar_url, created_at)  
+- `sessions`(id, user_id, created_at, title, model_id, persona_id, rag_enabled, streaming_enabled)  
+- `messages`(id, session_id, role [user|assistant|system|tool], content, created_at, edited_from_message_id NULL)  
+- `uploads`(id, user_id, filename, path, mime, size_bytes, created_at)  
+- `trace_runs`(id, session_id, started_at, finished_at, status, model_id, total_tokens, prompt_tokens, completion_tokens, latency_ms)  
+- `trace_steps`(id, run_id, ts, type [prompt|rag|tool|mcp|model], label, input_json, output_json, latency_ms)  
+- `rag_documents`(id, upload_id, doc_type [pdf|md|txt|docx|mdx], title, meta_json)  
+- `rag_chunks`(id, document_id, chunk_index, text, embedding BLOB/VECTOR, token_count)  
+- `config_cache`(key, json, loaded_at, version)
+
+> Vector column uses the chosen SQLite vector extension; index created via the extension’s recommended API.
+
+## 8) File Handling
+- Allowed: **.pdf, .md, .txt, .docx, .mdx**  
+- Max size per file: **5 MB**  
+- Upload UI in chat sidebar; show status & parse results.
+
+## 9) RAG Pipeline (Configurable)
+- Chunking & overlap configurable (defaults in `/config/rag.json`).  
+- Embeddings: configurable model (Ollama embedding) + dimension.  
+- Vector store: SQLite + vector extension; cosine similarity.  
+- Retrieval: top-k configurable.  
+- No source citations in final answers (by design), but retrieved passages appear on the **internal activity** page.
+
+## 10) Model Selection
+- Discover available Ollama models at runtime (via Ollama API).  
+- Per-conversation model choice; UI dropdown in chat header.  
+- “Thinking” models supported if available in Ollama.  
+- **Note:** The app does **not** store or display literal chain-of-thought; only model outputs and optional summaries.
+
+## 11) MCP Integration
+- Configured servers defined by admin in `/config/mcp.json`.  
+- User can enable/disable a subset per conversation (checkbox list).  
+- Auth: API keys read from `/config/secrets.json` (mapped by server name).  
+- Transports supported: **stdio**, **SSE**, **streamtable HTTP**.
+
+## 12) Internal Activity Page (Tracing)
+- Scope: only the **signed-in user’s** sessions.  
+- Views:
+  - **Run timeline:** per message → list of steps (prompt → retrieval → tools/MCP → model output).  
+  - **Prompts & deltas:** full system+user prompts and assistant output deltas.  
+  - **RAG:** retrieved chunks preview (text, doc name, chunk id).  
+  - **Tools/MCP:** call inputs/outputs, status, latency.  
+  - **Metrics:** tokens, latency, retry count.  
+- **Important:** No verbatim chain-of-thought is stored or shown; include model-provided **reasoning summaries** when available.
+
+## 13) Config Files (Loaded at Startup; Fail-Fast)
+All under `/config/`, validated via JSON Schema.
+
+### 13.1 `/config/models.json` (example)
+```json
+{
+  "default_model": "llama3.1:8b-instruct",
+  "allow_user_switch_per_conversation": true,
+  "ollama": {
+    "base_url": "http://localhost:11434",
+    "discover_models": true,
+    "prepull": []
+  },
+  "thinking_models_allowed": true
+}
+```
+
+### 13.2 `/config/mcp.json`
+```json
+{
+  "servers": [
+    {
+      "name": "filesystem-tools",
+      "transport": "stdio",
+      "command": "node",
+      "args": ["mcp/fs-server.js"],
+      "requires_api_key": false,
+      "enabled_by_default": false
+    },
+    {
+      "name": "search-sse",
+      "transport": "sse",
+      "base_url": "http://localhost:8081",
+      "requires_api_key": true,
+      "enabled_by_default": false,
+      "auth_key_name": "SEARCH_SSE_API_KEY"
+    },
+    {
+      "name": "analytics-streamtable",
+      "transport": "streamtable_http",
+      "base_url": "http://localhost:9090",
+      "requires_api_key": true,
+      "enabled_by_default": false,
+      "auth_key_name": "ANALYTICS_ST_API_KEY"
+    }
+  ]
+}
+```
+
+### 13.3 `/config/rag.json`
+```json
+{
+  "embedding_model": "nomic-embed-text",
+  "chunk_size_tokens": 1000,
+  "chunk_overlap_tokens": 200,
+  "top_k": 5,
+  "sqlite": {
+    "db_path": "./app.db",
+    "vector_extension": "sqlite-vec"
+  }
+}
+```
+
+### 13.4 `/config/personas.json`
+```json
+{
+  "default_persona_id": "se-default",
+  "personas": [
+    {
+      "id": "se-default",
+      "name": "Solutions Engineer",
+      "system_prompt": "You are a helpful technical solutions engineer. Be concise, cite internal context where relevant, and prefer tool use when asked for concrete data."
+    },
+    {
+      "id": "debugger",
+      "name": "Trace Explainer",
+      "system_prompt": "Explain each step you will take before executing tools. Be explicit about assumptions. Do NOT include chain-of-thought."
+    }
+  ]
+}
+```
+
+### 13.5 `/config/secrets.json`
+```json
+{
+  "jwt_secret": "REPLACE_ME_DEMO_ONLY",
+  "api_keys": {
+    "SEARCH_SSE_API_KEY": "xxx",
+    "ANALYTICS_ST_API_KEY": "yyy"
+  }
+}
+```
+
+## 14) API Design (High Level)
+- `POST /auth/login` {{ email, password }} → {{ access_token }}  
+- `GET /me` → user profile  
+- `GET /config` → merged, validated app config (safe subset)  
+- `GET /models` → discovered Ollama models  
+- `POST /sessions` {{ title?, model_id?, persona_id?, rag_enabled?, streaming_enabled?, enabled_mcp_servers?[] }}  
+- `GET /sessions/:id` / `DELETE /sessions/:id` / `PATCH /sessions/:id` (rename, toggles)  
+- `POST /sessions/:id/messages` {{ content, attachments? }} → creates a run  
+- `GET /sessions/:id/messages` → full history  
+- `POST /uploads` (multipart) → store & index if RAG enabled  
+- `GET /traces/:run_id` → full run with steps  
+- `GET /traces/sessions/:session_id` → runs list
+
+> WebSocket endpoint (optional) for live updates if streaming is toggled on by user.
+
+## 15) Frontend UX
+- **Login** → **Workspace**  
+- **Left rail:** new chat, list (rename/delete), global settings (read-only view of admin config).  
+- **Chat header:** model dropdown, persona dropdown, toggle RAG, choose MCP servers, toggle streaming.  
+- **Composer:** edit last user message; attach files; send.  
+- **Right drawer (Internal Activity):** opens per-turn trace with tabs: Timeline • Prompts • RAG • Tools • Metrics.  
+- **Branding:** F5 red (#E21D38) accents, neutral backgrounds; avoid low-contrast tints.
+
+## 16) Seeding (One-Time Scripts)
+- **Users (5):** realistic placeholders (names, titles, teams, avatar URLs); bcrypt-hashed passwords.  
+- **Configs:** validate all `/config/*.json` at startup; fail with descriptive errors.
+
+## 17) Performance
+- Streaming disabled by default; user can enable per chat.  
+- No rate limits in MVP.  
+- Keep entire conversation history (no auto-summarization).
+
+## 18) Deployment
+- Single `docker-compose.yml` with services:
+  - `frontend` (Vite build & static serve)
+  - `backend` (FastAPI + SQLite + vector extension)
+  - (Optional) `ollama` is external; URL in config
+- Volumes: mount `/data/uploads` and SQLite `app.db`.
+
+## 19) Open Questions / Future Extensions
+- Add dark mode and additional brand neutrals if needed.  
+- Consider optional refresh tokens & stricter password policy.  
+- Add source citations toggle if desired later.  
+- Add simple admin CLI for re-indexing & validation.
+
+## 20) Acceptance Tests (MVP)
+1. Can log in with a seeded user.  
+2. Create chat, pick an Ollama model (list reflects runtime discovery).  
+3. Toggle RAG on; upload a PDF; ask a question → model answers; internal page shows retrieval + steps.  
+4. Enable an MCP server; run a tool call → trace shows inputs/outputs.  
+5. Edit last user message and resend → trace shows new run.  
+6. Rename and delete chats.  
+7. Restart server with invalid `/config/*.json` → startup fails with clear schema errors.  
+8. Branding shows F5 red (#E21D38) accents, readable on white backgrounds.

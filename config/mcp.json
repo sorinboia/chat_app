@@ -1,0 +1,28 @@
+{
+  "servers": [
+    {
+      "name": "filesystem-tools",
+      "transport": "stdio",
+      "command": "python",
+      "args": ["-m", "mcp_tools.fs"],
+      "requires_api_key": false,
+      "enabled_by_default": false
+    },
+    {
+      "name": "search-sse",
+      "transport": "sse",
+      "base_url": "http://localhost:8081",
+      "requires_api_key": true,
+      "enabled_by_default": false,
+      "auth_key_name": "SEARCH_SSE_API_KEY"
+    },
+    {
+      "name": "analytics-streamtable",
+      "transport": "streamtable_http",
+      "base_url": "http://localhost:9090",
+      "requires_api_key": true,
+      "enabled_by_default": false,
+      "auth_key_name": "ANALYTICS_ST_API_KEY"
+    }
+  ]
+}
