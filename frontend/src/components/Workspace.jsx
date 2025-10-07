@@ -73,6 +73,7 @@ export default function Workspace({ user, onLogout }) {
   const [toolArgs, setToolArgs] = useState('{}');
   const [toolResult, setToolResult] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
+  const [isMcpModalOpen, setIsMcpModalOpen] = useState(false);
   const appShellRef = useRef(null);
   const sendAbortControllerRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -110,6 +111,23 @@ export default function Workspace({ user, onLogout }) {
     if (!activeSessionId) return;
     loadMessages(activeSessionId);
     loadRuns(activeSessionId);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!isMcpModalOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsMcpModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isMcpModalOpen]);
+
+  useEffect(() => {
+    setIsMcpModalOpen(false);
   }, [activeSessionId]);
 
   const scrollMessagesToBottom = useCallback(
@@ -228,6 +246,15 @@ export default function Workspace({ user, onLogout }) {
 
   const toggleActivityVisibility = useCallback(() => {
     setActivityVisible((prev) => !prev);
+  }, []);
+
+  const handleOpenMcpModal = useCallback(() => {
+    if (!activeSession) return;
+    setIsMcpModalOpen(true);
+  }, [activeSession]);
+
+  const handleCloseMcpModal = useCallback(() => {
+    setIsMcpModalOpen(false);
   }, []);
 
   const handleSelectSession = async (sessionId) => {
@@ -510,6 +537,9 @@ export default function Workspace({ user, onLogout }) {
                     ))}
                   </select>
                 </label>
+                <button className="secondary-btn" onClick={handleOpenMcpModal} disabled={!activeSession}>
+                  MCP Servers
+                </button>
               </div>
               <div className="toolbar-group">
                 <label className="toggle-label">
@@ -551,76 +581,109 @@ export default function Workspace({ user, onLogout }) {
           </div>
         </header>
 
-        <section className="control-surfaces">
-          <div className="panel">
-            <div className="panel-header">
-              <h3>MCP Servers</h3>
-              <span className="muted">Toggle and run tools for the active chat.</span>
-            </div>
-            <div className="mcp-grid">
-              {availableServers.map((server) => (
-                <label key={server.name} className="toggle-label">
-                  <input
-                    type="checkbox"
-                    checked={activeSession?.enabled_mcp_servers?.includes(server.name) || false}
-                    onChange={(event) => {
-                      const enabled = new Set(activeSession?.enabled_mcp_servers || []);
-                      if (event.target.checked) {
-                        enabled.add(server.name);
-                      } else {
-                        enabled.delete(server.name);
-                      }
-                      handleSessionFieldChange(activeSessionId, { enabled_mcp_servers: Array.from(enabled) });
-                    }}
-                    disabled={!activeSession}
-                  />
-                  {server.name} <span className="muted">({server.transport})</span>
-                </label>
-              ))}
-            </div>
-            <div className="tool-runner">
-              <div className="tool-row">
-                <label>
-                  Server
-                  <select value={toolServer} onChange={(event) => setToolServer(event.target.value)}>
-                    <option value="">Select server</option>
-                    {(activeSession?.enabled_mcp_servers || []).map((serverName) => (
-                      <option key={serverName} value={serverName}>
-                        {serverName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Tool
-                  <input
-                    type="text"
-                    value={toolName}
-                    onChange={(event) => setToolName(event.target.value)}
-                    placeholder="list_directory"
-                  />
-                </label>
-              </div>
-              <label>
-                Arguments (JSON)
-                <textarea
-                  rows={3}
-                  value={toolArgs}
-                  onChange={(event) => setToolArgs(event.target.value)}
-                  placeholder='{"path": "."}'
-                />
-              </label>
-              <div className="tool-actions">
-                <button className="secondary-btn" onClick={handleExecuteTool} disabled={!activeSession}>
-                  Run Tool
+        {isMcpModalOpen && (
+          <div className="modal-backdrop" onClick={handleCloseMcpModal}>
+            <div
+              className="modal-shell"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="mcp-modal-title"
+              aria-describedby="mcp-modal-description"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="modal-header">
+                <div>
+                  <h2 id="mcp-modal-title">Configure MCP Servers</h2>
+                  <p id="mcp-modal-description" className="muted">
+                    Toggle server access and run tools for the active chat session.
+                  </p>
+                </div>
+                <button className="icon-btn" onClick={handleCloseMcpModal} aria-label="Close MCP configuration">
+                  ✕
                 </button>
               </div>
-              {toolResult && (
-                <pre className="tool-output">{JSON.stringify(toolResult, null, 2)}</pre>
-              )}
+              <div className="modal-content">
+                <div className="panel">
+                  <div className="panel-header">
+                    <h3>Servers</h3>
+                    <span className="muted">Enable servers available to this chat.</span>
+                  </div>
+                  <div className="mcp-grid">
+                    {availableServers.map((server) => (
+                      <label key={server.name} className="toggle-label">
+                        <input
+                          type="checkbox"
+                          checked={activeSession?.enabled_mcp_servers?.includes(server.name) || false}
+                          onChange={(event) => {
+                            const enabled = new Set(activeSession?.enabled_mcp_servers || []);
+                            if (event.target.checked) {
+                              enabled.add(server.name);
+                            } else {
+                              enabled.delete(server.name);
+                            }
+                            handleSessionFieldChange(activeSessionId, { enabled_mcp_servers: Array.from(enabled) });
+                          }}
+                          disabled={!activeSession}
+                        />
+                        {server.name} <span className="muted">({server.transport})</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="panel">
+                  <div className="panel-header">
+                    <h3>Run Tool</h3>
+                    <span className="muted">Execute an MCP tool using the active chat context.</span>
+                  </div>
+                  <div className="tool-runner">
+                    <div className="tool-row">
+                      <label>
+                        Server
+                        <select value={toolServer} onChange={(event) => setToolServer(event.target.value)}>
+                          <option value="">Select server</option>
+                          {(activeSession?.enabled_mcp_servers || []).map((serverName) => (
+                            <option key={serverName} value={serverName}>
+                              {serverName}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Tool
+                        <input
+                          type="text"
+                          value={toolName}
+                          onChange={(event) => setToolName(event.target.value)}
+                          placeholder="list_directory"
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      Arguments (JSON)
+                      <textarea
+                        rows={3}
+                        value={toolArgs}
+                        onChange={(event) => setToolArgs(event.target.value)}
+                        placeholder='{"path": "."}'
+                      />
+                    </label>
+                    <div className="tool-actions">
+                      <button className="secondary-btn" onClick={handleExecuteTool} disabled={!activeSession}>
+                        Run Tool
+                      </button>
+                      <button className="ghost-btn" onClick={handleCloseMcpModal}>
+                        Close
+                      </button>
+                    </div>
+                    {toolResult && (
+                      <pre className="tool-output">{JSON.stringify(toolResult, null, 2)}</pre>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </section>
+        )}
 
         <section ref={messagesContainerRef} className="messages" aria-live="polite">
           {visibleMessages.length === 0 && (
