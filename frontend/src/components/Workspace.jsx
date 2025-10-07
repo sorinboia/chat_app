@@ -500,7 +500,7 @@ export default function Workspace({ user, onLogout }) {
         )}
       </aside>
 
-      <main className={`chat-panel${sending ? ' is-disabled' : ''}`} aria-busy={sending}>
+      <main className="chat-panel" aria-busy={sending}>
         <header className="chat-header">
           <div className="chat-header-left">
             <div className="chat-title">
@@ -514,7 +514,7 @@ export default function Workspace({ user, onLogout }) {
                   <select
                     value={activeSession?.model_id || ''}
                     onChange={(event) => handleSessionFieldChange(activeSessionId, { model_id: event.target.value })}
-                    disabled={!activeSession}
+                    disabled={!activeSession || sending}
                   >
                     {models.map((model) => (
                       <option key={model.id} value={model.id}>
@@ -528,7 +528,7 @@ export default function Workspace({ user, onLogout }) {
                   <select
                     value={activeSession?.persona_id || ''}
                     onChange={(event) => handleSessionFieldChange(activeSessionId, { persona_id: event.target.value })}
-                    disabled={!activeSession}
+                    disabled={!activeSession || sending}
                   >
                     {personaOptions.map((persona) => (
                       <option key={persona.id} value={persona.id}>
@@ -547,7 +547,7 @@ export default function Workspace({ user, onLogout }) {
                     type="checkbox"
                     checked={activeSession?.rag_enabled || false}
                     onChange={(event) => handleSessionFieldChange(activeSessionId, { rag_enabled: event.target.checked })}
-                    disabled={!activeSession}
+                    disabled={!activeSession || sending}
                   />
                   RAG Enabled
                 </label>
@@ -556,7 +556,7 @@ export default function Workspace({ user, onLogout }) {
                     type="checkbox"
                     checked={activeSession?.streaming_enabled || false}
                     onChange={(event) => handleSessionFieldChange(activeSessionId, { streaming_enabled: event.target.checked })}
-                    disabled={!activeSession}
+                    disabled={!activeSession || sending}
                   />
                   Streaming
                 </label>
@@ -715,10 +715,16 @@ export default function Workspace({ user, onLogout }) {
           <div className="composer-shell">
             <textarea
               value={composerText}
-              onChange={(event) => setComposerText(event.target.value)}
+              onChange={(event) => {
+                if (!sending) {
+                  setComposerText(event.target.value);
+                }
+              }}
               onKeyDown={handleComposerKeyDown}
               placeholder="Send a message..."
               rows={3}
+              readOnly={sending}
+              aria-disabled={sending}
             />
             <div className="composer-footer">
               <div className="composer-left">
@@ -736,22 +742,16 @@ export default function Workspace({ user, onLogout }) {
                   </button>
                 )}
               </div>
-              <button className="primary-btn" onClick={handleSendMessage} disabled={sending || !activeSessionId}>
-                {sending ? 'Sending…' : editingMessageId ? 'Resend' : 'Send'}
+              <button
+                className="primary-btn"
+                onClick={sending ? handleCancelSend : handleSendMessage}
+                disabled={!sending && !activeSessionId}
+              >
+                {sending ? 'Cancel' : editingMessageId ? 'Resend' : 'Send'}
               </button>
             </div>
           </div>
         </footer>
-        {sending && (
-          <div className="panel-overlay" role="alert" aria-live="assertive">
-            <div className="overlay-content">
-              <span>Sending message…</span>
-              <button className="secondary-btn" onClick={handleCancelSend}>
-                Cancel Send
-              </button>
-            </div>
-          </div>
-        )}
       </main>
 
       <aside className="activity-drawer" aria-hidden={!activityVisible}>
