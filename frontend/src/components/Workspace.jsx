@@ -760,16 +760,16 @@ export default function Workspace({ user, onLogout }) {
           </footer>
           {activityVisible && (
             <div
-              className="absolute top-1/2 right-[-22px] z-30 flex -translate-y-1/2"
+              className="absolute top-1/2 right-[-28px] z-40 flex -translate-y-1/2"
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize activity panel"
               onPointerDown={handleActivityResizeStart}
               style={{ cursor: 'col-resize' }}
             >
-              <div className="flex h-24 w-6 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-400 shadow-sm transition hover:border-brand-primary hover:bg-brand-primary/10 hover:text-brand-primary">
-                <span aria-hidden="true" className="text-sm font-semibold tracking-wide">
-                  ||
+              <div className="flex h-28 w-8 items-center justify-center rounded-full border-2 border-brand-primary/30 bg-white text-brand-primary shadow-lg transition hover:border-brand-primary hover:bg-brand-primary/10">
+                <span aria-hidden="true" className="text-base font-semibold tracking-wide">
+                  ⇆
                 </span>
               </div>
             </div>
