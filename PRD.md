@@ -103,11 +103,14 @@ All under `/config/`, validated via JSON Schema.
   "ollama": {
     "base_url": "http://localhost:11434",
     "discover_models": true,
-    "prepull": []
+    "prepull": [],
+    "request_timeout_seconds": 120
   },
   "thinking_models_allowed": true
 }
 ```
+
+- `request_timeout_seconds` controls both discovery and chat HTTP calls to Ollama; default is 120 seconds to accommodate slower responses and can be tuned per deployment.
 
 ### 13.2 `/config/mcp.json`
 ```json
