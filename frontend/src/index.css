@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    @apply min-h-screen bg-gradient-to-b from-[#f8f9fc] to-[#eef1f8] font-sans text-brand-dark antialiased;
+  }
+
+  #root {
+    @apply min-h-screen bg-transparent;
+  }
+
+  button {
+    @apply cursor-pointer;
+  }
+}
+
+body.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+@layer components {
+  .glass-card {
+    @apply rounded-3xl border border-white/60 bg-white/70 shadow-card backdrop-blur;
+  }
+
+  .pill {
+    @apply inline-flex items-center rounded-full border border-brand-primary/20 bg-brand-primary/10 px-2 text-xs font-semibold uppercase tracking-wide text-brand-primary;
+  }
+
+  .muted {
+    @apply text-sm text-slate-500;
+  }
+}
