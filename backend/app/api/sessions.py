@@ -337,15 +337,36 @@ async def _process_user_turn(
         )
 
     persona_prompt = _resolve_persona_prompt(chat_session.persona_id, app_config)
+    history_stmt = (
+        select(Message)
+        .where(Message.session_id == chat_session.id)
+        .order_by(Message.created_at.asc())
+    )
+    history = (await db.execute(history_stmt)).scalars().all()
+
     llm_messages: List[Dict[str, str]] = []
     if persona_prompt:
         llm_messages.append({"role": "system", "content": persona_prompt})
+
+    allowed_roles = {"user", "assistant"}
+    if history:
+        for prior in history[:-1]:
+            if prior.role in allowed_roles:
+                llm_messages.append({"role": prior.role, "content": prior.content})
 
     context_message = _shape_context_message(retrieved_chunks)
     if context_message:
         llm_messages.append({"role": "system", "content": context_message})
 
-    llm_messages.append({"role": "user", "content": content})
+    appended_latest = False
+    if history:
+        latest = history[-1]
+        if latest.role in allowed_roles:
+            llm_messages.append({"role": latest.role, "content": latest.content})
+            appended_latest = True
+
+    if not appended_latest:
+        llm_messages.append({"role": "user", "content": content})
 
     llm_request_payload = {
         "model": chat_session.model_id,
