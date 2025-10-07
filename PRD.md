@@ -11,7 +11,7 @@
 
 ## 2) Success Criteria
 - A user can: log in, upload docs, start chats, toggle RAG, pick an LLM and MCP servers per conversation, and view a detailed internal activity page.  
-- While a message send is in-flight, the main chat workspace disables interactions and presents a cancel-send control.  
+- While a message send is in-flight, the composer controls (input, send button, model/persona and RAG/streaming toggles) disable and the primary action switches to Cancel, without obscuring the chat workspace.  
 - The chat composer remains pinned to the bottom of the viewport and the transcript auto-scrolls to new messages.  
 - MCP server management opens in a modal launched from the chat toolbar.  
 - All config is admin-defined JSON under `/config/*.json` and loaded at startup (fail-fast on invalid schema).  
