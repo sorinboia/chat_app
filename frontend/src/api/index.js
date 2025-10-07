@@ -44,22 +44,29 @@ export async function fetchMessages(sessionId) {
   return data;
 }
 
-export async function sendMessage(sessionId, content, files) {
+export async function sendMessage(sessionId, content, files, options = {}) {
   const form = new FormData();
   form.append('content', content);
   if (files) {
     Array.from(files).forEach((file) => form.append('files', file));
   }
   const { data } = await apiClient.post(`/sessions/${sessionId}/messages`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    signal: options.signal
   });
   return data;
 }
 
-export async function editMessage(sessionId, messageId, content) {
-  const { data } = await apiClient.patch(`/sessions/${sessionId}/messages/${messageId}`, {
-    content
-  });
+export async function editMessage(sessionId, messageId, content, options = {}) {
+  const { data } = await apiClient.patch(
+    `/sessions/${sessionId}/messages/${messageId}`,
+    {
+      content
+    },
+    {
+      signal: options.signal
+    }
+  );
   return data;
 }
 

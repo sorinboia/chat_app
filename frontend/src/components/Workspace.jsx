@@ -74,6 +74,7 @@ export default function Workspace({ user, onLogout }) {
   const [toolResult, setToolResult] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
   const appShellRef = useRef(null);
+  const sendAbortControllerRef = useRef(null);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || null,
@@ -234,18 +235,21 @@ export default function Workspace({ user, onLogout }) {
   };
 
   const handleSendMessage = async () => {
-    if (!activeSessionId || !composerText.trim()) return;
+    if (!activeSessionId || !composerText.trim() || sending) return;
     setSending(true);
     try {
+      setStatusMessage(null);
       const filesOverLimit = Array.from(composerFiles || []).find((file) => file.size > MAX_FILE_SIZE_MB * 1024 * 1024);
       if (filesOverLimit) {
         setStatusMessage(`File "${filesOverLimit.name}" exceeds ${MAX_FILE_SIZE_MB} MB limit.`);
         return;
       }
+      const controller = new AbortController();
+      sendAbortControllerRef.current = controller;
       if (editingMessageId) {
-        await editMessage(activeSessionId, editingMessageId, composerText.trim());
+        await editMessage(activeSessionId, editingMessageId, composerText.trim(), { signal: controller.signal });
       } else {
-        await sendMessage(activeSessionId, composerText.trim(), composerFiles);
+        await sendMessage(activeSessionId, composerText.trim(), composerFiles, { signal: controller.signal });
       }
       setComposerText('');
       setComposerFiles([]);
@@ -254,10 +258,24 @@ export default function Workspace({ user, onLogout }) {
       await loadMessages(activeSessionId);
       await loadRuns(activeSessionId);
     } catch (error) {
-      console.error(error);
-      setStatusMessage('Failed to send message. Check console for details.');
+      if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+        setStatusMessage('Message sending canceled.');
+      } else {
+        console.error(error);
+        setStatusMessage('Failed to send message. Check console for details.');
+      }
     } finally {
+      if (sendAbortControllerRef.current) {
+        sendAbortControllerRef.current = null;
+      }
       setSending(false);
+    }
+  };
+
+  const handleCancelSend = () => {
+    const controller = sendAbortControllerRef.current;
+    if (controller) {
+      controller.abort();
     }
   };
 
@@ -279,6 +297,15 @@ export default function Workspace({ user, onLogout }) {
 
   const handleFileChange = (event) => {
     setComposerFiles(event.target.files);
+  };
+
+  const handleComposerKeyDown = (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (!sending) {
+        handleSendMessage();
+      }
+    }
   };
 
   const handleSelectRun = async (run) => {
@@ -414,7 +441,7 @@ export default function Workspace({ user, onLogout }) {
         )}
       </aside>
 
-      <main className="chat-panel">
+      <main className={`chat-panel${sending ? ' is-disabled' : ''}`} aria-busy={sending}>
         <header className="chat-header">
           <div className="chat-header-left">
             <div className="chat-title">
@@ -594,6 +621,7 @@ export default function Workspace({ user, onLogout }) {
             <textarea
               value={composerText}
               onChange={(event) => setComposerText(event.target.value)}
+              onKeyDown={handleComposerKeyDown}
               placeholder="Send a message..."
               rows={3}
             />
@@ -619,6 +647,16 @@ export default function Workspace({ user, onLogout }) {
             </div>
           </div>
         </footer>
+        {sending && (
+          <div className="panel-overlay" role="alert" aria-live="assertive">
+            <div className="overlay-content">
+              <span>Sending message…</span>
+              <button className="secondary-btn" onClick={handleCancelSend}>
+                Cancel Send
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
       <aside className="activity-drawer" aria-hidden={!activityVisible}>

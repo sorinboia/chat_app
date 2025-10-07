@@ -270,6 +270,52 @@ body.is-resizing * {
   border-right: 1px solid var(--border);
 }
 
+.chat-panel.is-disabled {
+  position: relative;
+}
+
+.chat-panel.is-disabled > *:not(.panel-overlay) {
+  pointer-events: none;
+  user-select: none;
+  filter: grayscale(35%);
+  opacity: 0.6;
+}
+
+.panel-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(247, 248, 252, 0.75);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  padding: 2rem;
+}
+
+.overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid rgba(210, 213, 222, 0.7);
+  border-radius: 1.1rem;
+  box-shadow: var(--shadow-soft);
+  padding: 1.75rem 2.25rem;
+  color: var(--brand-dark);
+}
+
+.overlay-content span {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.overlay-content .secondary-btn {
+  min-width: 10rem;
+}
+
 .chat-header {
   display: flex;
   justify-content: space-between;

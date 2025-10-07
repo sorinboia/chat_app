@@ -11,6 +11,7 @@
 
 ## 2) Success Criteria
 - A user can: log in, upload docs, start chats, toggle RAG, pick an LLM and MCP servers per conversation, and view a detailed internal activity page.  
+- While a message send is in-flight, the main chat workspace disables interactions and presents a cancel-send control.  
 - All config is admin-defined JSON under `/config/*.json` and loaded at startup (fail-fast on invalid schema).  
 - Runs locally and via `docker-compose`.  
 - Branding uses F5 colors (primary red **#E21D38** and white).
