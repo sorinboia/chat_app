@@ -14,7 +14,11 @@ import {
   editMessage,
   listRuns,
   getRun,
-  runTool
+  runTool,
+  fetchRagUploads,
+  uploadRagFiles,
+  deleteRagUpload,
+  queryRag
 } from '../api/index.js';
 
 const MAX_FILE_SIZE_MB = 5;
@@ -27,6 +31,13 @@ function classNames(...values) {
 
 function formatDate(value) {
   return new Date(value).toLocaleString();
+}
+
+function formatFileSize(bytes) {
+  if (bytes == null) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function getRoleLabel(role) {
@@ -102,7 +113,6 @@ export default function Workspace({ user, onLogout }) {
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [composerText, setComposerText] = useState('');
-  const [composerFiles, setComposerFiles] = useState([]);
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [sending, setSending] = useState(false);
@@ -120,6 +130,15 @@ export default function Workspace({ user, onLogout }) {
   const [toolResult, setToolResult] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
   const [isMcpModalOpen, setIsMcpModalOpen] = useState(false);
+  const [isRagModalOpen, setIsRagModalOpen] = useState(false);
+  const [ragUploads, setRagUploads] = useState([]);
+  const [ragSelectedFiles, setRagSelectedFiles] = useState([]);
+  const [ragUploading, setRagUploading] = useState(false);
+  const [ragQueryText, setRagQueryText] = useState('');
+  const [ragQueryResults, setRagQueryResults] = useState([]);
+  const [ragQueryLoading, setRagQueryLoading] = useState(false);
+  const [ragModalStatus, setRagModalStatus] = useState(null);
+  const [ragDeletingId, setRagDeletingId] = useState(null);
   const [expandedThoughts, setExpandedThoughts] = useState({});
   const appShellRef = useRef(null);
   const sendAbortControllerRef = useRef(null);
@@ -178,6 +197,7 @@ export default function Workspace({ user, onLogout }) {
     }),
     []
   );
+  const ragSelectedFilesList = useMemo(() => Array.from(ragSelectedFiles || []), [ragSelectedFiles]);
   const getAvatarTone = useCallback((role) => {
     if (role === 'user') return 'bg-brand-primary/10 text-brand-primary';
     if (role === 'assistant') return 'bg-slate-900 text-white';
@@ -188,6 +208,16 @@ export default function Workspace({ user, onLogout }) {
     () => 'relative flex min-h-screen gap-6 px-6 py-6 xl:px-10 xl:py-8',
     []
   );
+
+  const loadRagUploads = useCallback(async () => {
+    try {
+      const uploads = await fetchRagUploads();
+      setRagUploads(uploads);
+    } catch (error) {
+      console.error('Failed to load RAG uploads', error);
+      setRagModalStatus('Failed to load existing uploads.');
+    }
+  }, []);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -221,6 +251,28 @@ export default function Workspace({ user, onLogout }) {
   useEffect(() => {
     setIsMcpModalOpen(false);
   }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!isRagModalOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsRagModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isRagModalOpen]);
+
+  useEffect(() => {
+    if (!isRagModalOpen) return;
+    setRagSelectedFiles([]);
+    setRagModalStatus(null);
+    setRagQueryResults([]);
+    setRagQueryLoading(false);
+    loadRagUploads();
+  }, [isRagModalOpen, loadRagUploads]);
 
   const scrollMessagesToBottom = useCallback(
     (behavior = 'auto') => {
@@ -349,6 +401,102 @@ export default function Workspace({ user, onLogout }) {
     setIsMcpModalOpen(false);
   }, []);
 
+  const handleOpenRagModal = useCallback(() => {
+    setIsRagModalOpen(true);
+  }, []);
+
+  const handleCloseRagModal = useCallback(() => {
+    setIsRagModalOpen(false);
+    setRagSelectedFiles([]);
+    setRagQueryText('');
+    setRagQueryResults([]);
+    setRagModalStatus(null);
+    setRagQueryLoading(false);
+  }, []);
+
+  const handleRagFileChange = (event) => {
+    setRagSelectedFiles(event.target.files);
+  };
+
+  const handleUploadRagData = async () => {
+    const filesArray = Array.from(ragSelectedFiles || []);
+    if (!filesArray.length) {
+      setRagModalStatus('Select at least one file to upload.');
+      return;
+    }
+    const tooLarge = filesArray.find((file) => file.size > MAX_FILE_SIZE_MB * 1024 * 1024);
+    if (tooLarge) {
+      setRagModalStatus(`File "${tooLarge.name}" exceeds ${MAX_FILE_SIZE_MB} MB limit.`);
+      return;
+    }
+    setRagUploading(true);
+    setRagModalStatus(null);
+    try {
+      await uploadRagFiles(ragSelectedFiles);
+      setRagModalStatus('Files uploaded successfully.');
+      setRagSelectedFiles([]);
+      await loadRagUploads();
+    } catch (error) {
+      console.error('Failed to upload RAG files', error);
+      setRagModalStatus('Failed to upload files. Check console for details.');
+    } finally {
+      setRagUploading(false);
+    }
+  };
+
+  const handleDeleteRagUpload = useCallback(
+    async (uploadId) => {
+      if (!uploadId) return;
+      const target = ragUploads.find((upload) => upload.id === uploadId);
+      const label = target?.filename || 'this upload';
+      const confirmed = window.confirm(`Delete "${label}" from RAG?`);
+      if (!confirmed) return;
+      setRagModalStatus(null);
+      setRagDeletingId(uploadId);
+      try {
+        await deleteRagUpload(uploadId);
+        setRagUploads((uploads) => uploads.filter((upload) => upload.id !== uploadId));
+        const targetFilename = target?.filename;
+        setRagQueryResults((results) =>
+          results.filter((chunk) => {
+            if (targetFilename) {
+              return chunk.filename !== targetFilename;
+            }
+            return chunk.id !== uploadId;
+          })
+        );
+        setRagModalStatus('Upload deleted.');
+      } catch (error) {
+        console.error('Failed to delete RAG upload', error);
+        setRagModalStatus('Failed to delete upload. Check console for details.');
+      } finally {
+        setRagDeletingId(null);
+      }
+    },
+    [ragUploads, deleteRagUpload]
+  );
+
+  const handleRagQuery = async () => {
+    if (!ragQueryText.trim()) {
+      setRagModalStatus('Enter a query before running retrieval.');
+      return;
+    }
+    setRagQueryLoading(true);
+    setRagModalStatus(null);
+    try {
+      const { chunks } = await queryRag({ query: ragQueryText.trim() });
+      setRagQueryResults(chunks);
+      if (!chunks.length) {
+        setRagModalStatus('No chunks retrieved for that query.');
+      }
+    } catch (error) {
+      console.error('Failed to query RAG', error);
+      setRagModalStatus('Failed to query RAG. Check console for details.');
+    } finally {
+      setRagQueryLoading(false);
+    }
+  };
+
   const handleSelectSession = async (sessionId) => {
     setActiveSessionId(sessionId);
   };
@@ -390,20 +538,14 @@ export default function Workspace({ user, onLogout }) {
     setSending(true);
     try {
       setStatusMessage(null);
-      const filesOverLimit = Array.from(composerFiles || []).find((file) => file.size > MAX_FILE_SIZE_MB * 1024 * 1024);
-      if (filesOverLimit) {
-        setStatusMessage(`File "${filesOverLimit.name}" exceeds ${MAX_FILE_SIZE_MB} MB limit.`);
-        return;
-      }
       const controller = new AbortController();
       sendAbortControllerRef.current = controller;
       if (editingMessageId) {
         await editMessage(activeSessionId, editingMessageId, composerText.trim(), { signal: controller.signal });
       } else {
-        await sendMessage(activeSessionId, composerText.trim(), composerFiles, { signal: controller.signal });
+        await sendMessage(activeSessionId, composerText.trim(), { signal: controller.signal });
       }
       setComposerText('');
-      setComposerFiles([]);
       setEditingMessageId(null);
       setStatusMessage(null);
       await loadMessages(activeSessionId);
@@ -448,10 +590,6 @@ export default function Workspace({ user, onLogout }) {
     setEditingMessageId(null);
     setStatusMessage(null);
     setComposerText('');
-  };
-
-  const handleFileChange = (event) => {
-    setComposerFiles(event.target.files);
   };
 
   const handleComposerKeyDown = (event) => {
@@ -652,6 +790,9 @@ export default function Workspace({ user, onLogout }) {
                   </button>
                   <button className={buttonStyles.ghost} onClick={toggleActivityVisibility}>
                     {activityVisible ? 'Hide Activity' : 'Show Activity'}
+                  </button>
+                  <button className={buttonStyles.ghost} onClick={handleOpenRagModal}>
+                    RAG
                   </button>
                 </div>
                 <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/60 px-3 py-2 text-sm font-semibold text-slate-600">
@@ -880,18 +1021,6 @@ export default function Workspace({ user, onLogout }) {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3">
-                  <label className="relative inline-flex cursor-pointer items-center overflow-hidden rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-brand-primary/30 hover:text-brand-primary">
-                    <span className="mr-2 text-lg" aria-hidden="true">
-                      ＋
-                    </span>
-                    Attach
-                    <input
-                      type="file"
-                      multiple
-                      onChange={handleFileChange}
-                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                    />
-                  </label>
                   {!editingMessageId ? (
                     <button className={buttonStyles.ghost} onClick={handleStartEditing} disabled={!messages.length}>
                       Edit Last Message
@@ -1001,6 +1130,166 @@ export default function Workspace({ user, onLogout }) {
           </aside>
         </div>
       </div>
+      {isRagModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-6 py-12 backdrop-blur-sm"
+          onClick={handleCloseRagModal}
+        >
+          <div
+            className="glass-card w-full max-w-5xl overflow-hidden border border-white/60 bg-white/90 text-slate-900 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rag-modal-title"
+            aria-describedby="rag-modal-description"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 px-6 py-5">
+              <div>
+                <h2 id="rag-modal-title" className="text-xl font-semibold text-slate-900">
+                  Manage RAG Data
+                </h2>
+                <p id="rag-modal-description" className="mt-1 text-sm text-slate-500">
+                  Upload shared documents and test retrieval across all chats.
+                </p>
+              </div>
+              <button className={buttonStyles.iconMuted} onClick={handleCloseRagModal} aria-label="Close RAG modal">
+                ✕
+              </button>
+            </div>
+            <div className="grid gap-6 px-6 py-6 lg:grid-cols-2">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Upload documents</h3>
+                  <p className="text-sm text-slate-500">Files are available to every chat when RAG is enabled.</p>
+                </div>
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-inner">
+                  <label className="relative inline-flex cursor-pointer items-center overflow-hidden rounded-2xl border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-brand-primary/30 hover:text-brand-primary">
+                    <span className="mr-2 text-lg" aria-hidden="true">＋</span>
+                    Choose files
+                    <input
+                      type="file"
+                      multiple
+                      onChange={handleRagFileChange}
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    />
+                  </label>
+                  {ragSelectedFilesList.length > 0 && (
+                    <ul className="space-y-2 rounded-2xl border border-slate-200 bg-white/90 p-3 text-sm text-slate-600">
+                      {ragSelectedFilesList.map((file) => (
+                        <li key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center justify-between gap-3">
+                          <span className="truncate font-semibold text-slate-700" title={file.name}>
+                            {file.name}
+                          </span>
+                          <span className="text-xs text-slate-500">{formatFileSize(file.size)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <button
+                    className={buttonStyles.primary}
+                    onClick={handleUploadRagData}
+                    disabled={ragUploading}
+                  >
+                    {ragUploading ? 'Uploading…' : 'Upload to RAG'}
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Existing uploads</h4>
+                  {ragUploads.length === 0 ? (
+                    <p className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-3 text-sm text-slate-500">
+                      No RAG documents uploaded yet.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2 max-h-48 overflow-y-auto">
+                      {ragUploads.map((upload) => (
+                        <li
+                          key={upload.id}
+                          className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <span className="block truncate font-semibold text-slate-700" title={upload.filename}>
+                                {upload.filename}
+                              </span>
+                              <div className="mt-1 text-xs text-slate-400">Added {formatDate(upload.created_at)}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-500">{formatFileSize(upload.size_bytes)}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRagUpload(upload.id)}
+                                disabled={ragDeletingId === upload.id}
+                                className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500 transition hover:border-red-200 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {ragDeletingId === upload.id ? 'Deleting…' : 'Delete'}
+                              </button>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Query RAG</h3>
+                  <p className="text-sm text-slate-500">Send a prompt to preview retrieved chunks.</p>
+                </div>
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-inner">
+                  <textarea
+                    value={ragQueryText}
+                    onChange={(event) => setRagQueryText(event.target.value)}
+                    rows={4}
+                    className="w-full resize-none rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm leading-relaxed text-slate-700 shadow-inner focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+                    placeholder="Ask something to test retrieval..."
+                    disabled={ragQueryLoading}
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      className={buttonStyles.primary}
+                      onClick={handleRagQuery}
+                      disabled={ragQueryLoading}
+                    >
+                      {ragQueryLoading ? 'Searching…' : 'Run Query'}
+                    </button>
+                  </div>
+                  <div className="space-y-3 max-h-72 overflow-y-auto">
+                    {ragQueryResults.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-6 text-sm text-slate-500">
+                        {ragQueryLoading ? 'Searching for relevant chunks...' : 'Run a query to inspect retrieved chunks.'}
+                      </div>
+                    ) : (
+                      ragQueryResults.map((chunk) => (
+                        <div
+                          key={chunk.id}
+                          className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm shadow-sm"
+                        >
+                          <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                            <span className="font-semibold text-slate-700">{chunk.filename || 'Chunk'}</span>
+                            <span>Score {chunk.score != null ? chunk.score.toFixed(3) : '—'}</span>
+                          </div>
+                          <pre className="max-h-48 overflow-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+                            {chunk.text}
+                          </pre>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {ragModalStatus && (
+              <div className="border-t border-slate-200/70 px-6 py-4">
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 shadow-inner">
+                  {ragModalStatus}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {isMcpModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-6 py-12 backdrop-blur-sm"

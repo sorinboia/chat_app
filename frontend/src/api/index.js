@@ -25,6 +25,11 @@ export async function fetchSessions() {
   return data;
 }
 
+export async function fetchSession(sessionId) {
+  const { data } = await apiClient.get(`/sessions/${sessionId}`);
+  return data;
+}
+
 export async function createSession(payload) {
   const { data } = await apiClient.post('/sessions', payload);
   return data;
@@ -44,12 +49,9 @@ export async function fetchMessages(sessionId) {
   return data;
 }
 
-export async function sendMessage(sessionId, content, files, options = {}) {
+export async function sendMessage(sessionId, content, options = {}) {
   const form = new FormData();
   form.append('content', content);
-  if (files) {
-    Array.from(files).forEach((file) => form.append('files', file));
-  }
   const { data } = await apiClient.post(`/sessions/${sessionId}/messages`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     signal: options.signal
@@ -82,5 +84,28 @@ export async function getRun(runId) {
 
 export async function runTool(sessionId, payload) {
   const { data } = await apiClient.post(`/sessions/${sessionId}/tools/run`, payload);
+  return data;
+}
+
+export async function fetchRagUploads() {
+  const { data } = await apiClient.get('/rag/uploads');
+  return data;
+}
+
+export async function uploadRagFiles(files) {
+  const form = new FormData();
+  Array.from(files || []).forEach((file) => form.append('files', file));
+  const { data } = await apiClient.post('/rag/uploads', form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return data;
+}
+
+export async function deleteRagUpload(uploadId) {
+  await apiClient.delete(`/rag/uploads/${uploadId}`);
+}
+
+export async function queryRag(payload) {
+  const { data } = await apiClient.post('/rag/query', payload);
   return data;
 }
