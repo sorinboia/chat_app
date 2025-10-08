@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   fetchConfig,
   fetchModels,
@@ -75,6 +77,23 @@ function parseMessageForThoughts(content) {
     thoughts: thoughts.length ? thoughts : null
   };
 }
+
+const markdownComponents = {
+  a: ({ node, href, children, className, ...props }) => (
+    <a
+      href={href}
+      {...props}
+      target={href && href.startsWith('#') ? undefined : '_blank'}
+      rel={href && href.startsWith('#') ? undefined : 'noreferrer'}
+      className={classNames(
+        'font-semibold text-brand-primary underline underline-offset-2 transition hover:text-brand-primary/80',
+        className
+      )}
+    >
+      {children}
+    </a>
+  )
+};
 
 export default function Workspace({ user, onLogout }) {
   const [config, setConfig] = useState(null);
@@ -801,9 +820,19 @@ export default function Workspace({ user, onLogout }) {
                       </div>
                     )}
                     {displayContent && (
-                      <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-                        {displayContent}
-                      </div>
+                      message.role === 'assistant' ? (
+                        <ReactMarkdown
+                          className="markdown-content"
+                          remarkPlugins={[remarkGfm]}
+                          components={markdownComponents}
+                        >
+                          {displayContent}
+                        </ReactMarkdown>
+                      ) : (
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                          {displayContent}
+                        </div>
+                      )
                     )}
                     {!displayContent && !hasThoughts && (
                       <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
