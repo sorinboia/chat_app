@@ -61,6 +61,10 @@ class PersonaConfig(BaseModel):
     id: constr(strip_whitespace=True, min_length=1)
     name: str
     system_prompt: str
+    default_model_id: Optional[str] = None
+    enabled_mcp_servers: Optional[List[str]] = None
+    rag_enabled: Optional[bool] = None
+    streaming_enabled: Optional[bool] = None
 
 
 class PersonasConfig(BaseModel):
@@ -68,10 +72,24 @@ class PersonasConfig(BaseModel):
     personas: List[PersonaConfig]
 
     def get_default(self) -> PersonaConfig:
-        for persona in self.personas:
-            if persona.id == self.default_persona_id:
-                return persona
+        persona = self.find(self.default_persona_id)
+        if persona is not None:
+            return persona
         raise ValueError(f"Default persona '{self.default_persona_id}' not found in personas list")
+
+    def find(self, persona_id: Optional[str]) -> Optional[PersonaConfig]:
+        if persona_id is None:
+            return None
+        for persona in self.personas:
+            if persona.id == persona_id:
+                return persona
+        return None
+
+    def resolve(self, persona_id: Optional[str]) -> PersonaConfig:
+        persona = self.find(persona_id)
+        if persona is not None:
+            return persona
+        return self.get_default()
 
 
 class SecretsConfig(BaseModel):

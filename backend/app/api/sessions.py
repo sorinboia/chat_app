@@ -5,8 +5,9 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
@@ -75,15 +76,31 @@ async def create_session(
     db: AsyncSession = Depends(get_db),
     app_config=Depends(get_app_config),
 ):
-    default_mcp = [server.name for server in app_config.mcp.servers if server.enabled_by_default]
+    personas_cfg = app_config.personas
+    persona = personas_cfg.resolve(payload.persona_id)
+    if payload.persona_id is not None and persona.id != payload.persona_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown persona id: {payload.persona_id}")
+
+    default_model_id = persona.default_model_id or app_config.models.default_model
+    global_default_mcp = [server.name for server in app_config.mcp.servers if server.enabled_by_default]
+    default_mcp_servers = (
+        list(persona.enabled_mcp_servers)
+        if persona.enabled_mcp_servers is not None
+        else list(global_default_mcp)
+    )
+    default_rag_enabled = persona.rag_enabled if persona.rag_enabled is not None else True
+    default_streaming_enabled = persona.streaming_enabled if persona.streaming_enabled is not None else False
+
     session = ChatSession(
         user_id=current_user.id,
         title=payload.title or "New Chat",
-        model_id=payload.model_id or app_config.models.default_model,
-        persona_id=payload.persona_id or app_config.personas.default_persona_id,
-        rag_enabled=payload.rag_enabled if payload.rag_enabled is not None else True,
-        streaming_enabled=payload.streaming_enabled if payload.streaming_enabled is not None else False,
-        enabled_mcp_servers=payload.enabled_mcp_servers if payload.enabled_mcp_servers is not None else default_mcp,
+        model_id=payload.model_id or default_model_id,
+        persona_id=persona.id,
+        rag_enabled=payload.rag_enabled if payload.rag_enabled is not None else default_rag_enabled,
+        streaming_enabled=payload.streaming_enabled if payload.streaming_enabled is not None else default_streaming_enabled,
+        enabled_mcp_servers=(
+            payload.enabled_mcp_servers if payload.enabled_mcp_servers is not None else default_mcp_servers
+        ),
     )
     db.add(session)
     await db.commit()
@@ -114,6 +131,7 @@ async def update_session(
     payload: SessionUpdateRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    app_config=Depends(get_app_config),
 ):
     session = await _get_session_for_user(db, current_user.id, session_id)
     if payload.title is not None:
@@ -121,7 +139,10 @@ async def update_session(
     if payload.model_id is not None:
         session.model_id = payload.model_id
     if payload.persona_id is not None:
-        session.persona_id = payload.persona_id
+        persona = app_config.personas.find(payload.persona_id)
+        if persona is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown persona id: {payload.persona_id}")
+        session.persona_id = persona.id
     if payload.rag_enabled is not None:
         session.rag_enabled = payload.rag_enabled
     if payload.streaming_enabled is not None:
@@ -267,6 +288,84 @@ def _shape_context_message(retrieved_chunks: List[RetrievedChunk]) -> Optional[s
     return "Use the following retrieved context when it is relevant:\n\n" + "\n\n".join(snippets)
 
 
+def _is_default_title(title: Optional[str]) -> bool:
+    if title is None:
+        return True
+    normalized = title.strip().lower()
+    if not normalized:
+        return True
+    return normalized == "new chat"
+
+
+def _sanitize_generated_title(raw_title: str) -> Optional[str]:
+    text = raw_title.strip()
+    if not text:
+        return None
+    text = re.sub(r"<think>.*?</think>", " ", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"</?think>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    candidates = [segment.strip(" \"'`") for segment in text.splitlines()]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        lowered = candidate.lower()
+        if lowered in {"<think>", "</think>"}:
+            continue
+        if len(candidate) > 60:
+            candidate = candidate[:60].rstrip(" ,;:-")
+        if candidate:
+            return candidate
+    return None
+
+
+async def _generate_session_title(
+    *,
+    ollama_service: OllamaService,
+    chat_session: ChatSession,
+    first_user_message: str,
+) -> Optional[str]:
+    preview = first_user_message.strip()
+    if not preview:
+        return None
+    preview = preview[:400]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You create concise conversation titles of at most six words. "
+                "Reply with the title only, no punctuation other than necessary capitalization."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Based on the user's opening message, suggest a title for the conversation. "
+                "Opening message:\n\n" + preview
+            ),
+        },
+    ]
+    try:
+        response = await ollama_service.chat(
+            model=chat_session.model_id,
+            messages=messages,
+            tools=None,
+        )
+    except Exception as exc:  # pragma: no cover - title generation best effort
+        logger.warning("Failed to generate title for session %s: %s", chat_session.id, exc)
+        return None
+
+    message_payload = response.get("message") or {}
+    raw_title = (message_payload.get("content") or "").strip()
+    sanitized = _sanitize_generated_title(raw_title)
+    if not sanitized:
+        logger.debug(
+            "Model returned empty or invalid title for session %s: %r",
+            chat_session.id,
+            raw_title,
+        )
+    return sanitized
+
+
 async def _process_user_turn(
     *,
     chat_session: ChatSession,
@@ -281,7 +380,7 @@ async def _process_user_turn(
     mcp_service: MCPService,
     trace_service: TraceService,
     edited_from: str | None = None,
-):
+) -> Tuple[Message, str, bool]:
     user_message = Message(
         session_id=chat_session.id,
         role="user",
@@ -351,6 +450,7 @@ async def _process_user_turn(
         .order_by(Message.created_at.asc())
     )
     history = (await db.execute(history_stmt)).scalars().all()
+    is_first_turn = len(history) == 1
 
     llm_messages: List[Dict[str, str]] = []
     if persona_prompt:
@@ -576,7 +676,7 @@ async def _process_user_turn(
     await db.commit()
     await db.refresh(assistant_message)
 
-    return assistant_message, run.id
+    return assistant_message, run.id, is_first_turn
 
 
 @router.post("/{session_id}/messages", response_model=MessageResponse)
@@ -594,7 +694,7 @@ async def post_message(
     trace_service = get_trace_service()
     ollama_service = get_ollama_service()
     mcp_service = get_mcp_service()
-    assistant_message, run_id = await _process_user_turn(
+    assistant_message, run_id, is_first_turn = await _process_user_turn(
         chat_session=chat_session,
         content=content,
         user=current_user,
@@ -607,6 +707,17 @@ async def post_message(
         mcp_service=mcp_service,
         trace_service=trace_service,
     )
+
+    if is_first_turn and _is_default_title(chat_session.title):
+        generated_title = await _generate_session_title(
+            ollama_service=ollama_service,
+            chat_session=chat_session,
+            first_user_message=content,
+        )
+        if generated_title:
+            chat_session.title = generated_title
+            await db.commit()
+            await db.refresh(chat_session)
 
     return MessageResponse(
         id=assistant_message.id,
@@ -649,7 +760,7 @@ async def edit_message(
     trace_service = get_trace_service()
     ollama_service = get_ollama_service()
     mcp_service = get_mcp_service()
-    assistant_message, run_id = await _process_user_turn(
+    assistant_message, run_id, _ = await _process_user_turn(
         chat_session=chat_session,
         content=payload.content,
         user=current_user,

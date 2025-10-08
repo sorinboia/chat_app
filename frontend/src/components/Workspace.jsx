@@ -3,6 +3,7 @@ import {
   fetchConfig,
   fetchModels,
   fetchSessions,
+  fetchSession,
   createSession,
   updateSession,
   deleteSession,
@@ -15,6 +16,8 @@ import {
 } from '../api/index.js';
 
 const MAX_FILE_SIZE_MB = 5;
+const DEFAULT_RAG_ENABLED = true;
+const DEFAULT_STREAMING_ENABLED = false;
 
 function classNames(...values) {
   return values.filter(Boolean).join(' ');
@@ -73,6 +76,18 @@ function parseMessageForThoughts(content) {
   };
 }
 
+function formatPersonaDefaultsSummary(defaults) {
+  if (!defaults) {
+    return '';
+  }
+  const modelLabel = defaults.modelId || 'N/A';
+  const mcpLabel =
+    defaults.mcpServers && defaults.mcpServers.length ? defaults.mcpServers.join(', ') : 'None';
+  return `Model: ${modelLabel} | RAG: ${defaults.ragEnabled ? 'On' : 'Off'} | Streaming: ${
+    defaults.streamingEnabled ? 'On' : 'Off'
+  } | MCP: ${mcpLabel}`;
+}
+
 export default function Workspace({ user, onLogout }) {
   const [config, setConfig] = useState(null);
   const [models, setModels] = useState([]);
@@ -109,6 +124,57 @@ export default function Workspace({ user, onLogout }) {
     [sessions, activeSessionId]
   );
   const personaOptions = useMemo(() => config?.personas?.personas || [], [config]);
+  const defaultPersonaId = config?.personas?.default_persona_id || null;
+  const globalDefaultMcpServers = useMemo(() => {
+    const servers = config?.mcp?.servers || [];
+    return servers.filter((server) => server.enabled_by_default).map((server) => server.name);
+  }, [config]);
+  const personaDefaultsMap = useMemo(() => {
+    const map = new Map();
+    const personas = config?.personas?.personas || [];
+    const fallbackModel = config?.models?.default_model || '';
+    const fallbackMcp = globalDefaultMcpServers;
+    personas.forEach((persona) => {
+      const mcpServers =
+        persona.enabled_mcp_servers != null ? [...persona.enabled_mcp_servers] : [...fallbackMcp];
+      map.set(persona.id, {
+        modelId: persona.default_model_id || fallbackModel,
+        ragEnabled: persona.rag_enabled ?? DEFAULT_RAG_ENABLED,
+        streamingEnabled: persona.streaming_enabled ?? DEFAULT_STREAMING_ENABLED,
+        mcpServers
+      });
+    });
+    return map;
+  }, [config, globalDefaultMcpServers]);
+  const getPersonaDefaultsSummary = useCallback(
+    (personaId) => {
+      if (!personaId) {
+        return '';
+      }
+      const defaults =
+        personaDefaultsMap.get(personaId) ||
+        (defaultPersonaId ? personaDefaultsMap.get(defaultPersonaId) : undefined);
+      return formatPersonaDefaultsSummary(defaults);
+    },
+    [defaultPersonaId, personaDefaultsMap]
+  );
+  const activePersonaDefaults = useMemo(() => {
+    if (!personaDefaultsMap || personaDefaultsMap.size === 0) {
+      return null;
+    }
+    const activeId = activeSession?.persona_id;
+    if (activeId && personaDefaultsMap.has(activeId)) {
+      return personaDefaultsMap.get(activeId);
+    }
+    if (defaultPersonaId && personaDefaultsMap.has(defaultPersonaId)) {
+      return personaDefaultsMap.get(defaultPersonaId);
+    }
+    return null;
+  }, [activeSession?.persona_id, defaultPersonaId, personaDefaultsMap]);
+  const activePersonaDefaultsSummary = useMemo(
+    () => formatPersonaDefaultsSummary(activePersonaDefaults),
+    [activePersonaDefaults]
+  );
   const buttonStyles = useMemo(
     () => ({
       primary:
@@ -365,6 +431,10 @@ export default function Workspace({ user, onLogout }) {
       setStatusMessage(null);
       await loadMessages(activeSessionId);
       await loadRuns(activeSessionId);
+      const sessionDetail = await fetchSession(activeSessionId);
+      setSessions((prev) =>
+        prev.map((session) => (session.id === activeSessionId ? sessionDetail : session))
+      );
     } catch (error) {
       if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
         setStatusMessage('Message sending canceled.');
@@ -648,13 +718,31 @@ export default function Workspace({ user, onLogout }) {
                         value={activeSession?.persona_id || ''}
                         onChange={(event) => handleSessionFieldChange(activeSessionId, { persona_id: event.target.value })}
                         disabled={!activeSession || sending}
+                        title={
+                          activePersonaDefaultsSummary
+                            ? `Persona defaults → ${activePersonaDefaultsSummary}`
+                            : undefined
+                        }
                       >
-                        {personaOptions.map((persona) => (
-                          <option key={persona.id} value={persona.id}>
-                            {persona.name}
-                          </option>
-                        ))}
+                        {personaOptions.map((persona) => {
+                          const summary = getPersonaDefaultsSummary(persona.id);
+                          return (
+                            <option
+                              key={persona.id}
+                              value={persona.id}
+                              title={summary ? `Defaults → ${summary}` : undefined}
+                            >
+                              {persona.name}
+                            </option>
+                          );
+                        })}
                       </select>
+                      {activePersonaDefaultsSummary ? (
+                        <span className="mt-1 text-[11px] font-medium text-slate-400">
+                          Defaults → {activePersonaDefaultsSummary}
+                        </span>
+                      ) : null}
+
                     </label>
                     <button className={buttonStyles.subtle} onClick={handleOpenMcpModal} disabled={!activeSession}>
                       MCP Servers
