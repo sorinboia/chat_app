@@ -16,6 +16,8 @@ import {
 } from '../api/index.js';
 
 const MAX_FILE_SIZE_MB = 5;
+const DEFAULT_RAG_ENABLED = true;
+const DEFAULT_STREAMING_ENABLED = false;
 
 function classNames(...values) {
   return values.filter(Boolean).join(' ');
@@ -110,6 +112,27 @@ export default function Workspace({ user, onLogout }) {
     [sessions, activeSessionId]
   );
   const personaOptions = useMemo(() => config?.personas?.personas || [], [config]);
+  const globalDefaultMcpServers = useMemo(() => {
+    const servers = config?.mcp?.servers || [];
+    return servers.filter((server) => server.enabled_by_default).map((server) => server.name);
+  }, [config]);
+  const personaDefaultsMap = useMemo(() => {
+    const map = new Map();
+    const personas = config?.personas?.personas || [];
+    const fallbackModel = config?.models?.default_model || '';
+    const fallbackMcp = globalDefaultMcpServers;
+    personas.forEach((persona) => {
+      const mcpServers =
+        persona.enabled_mcp_servers != null ? [...persona.enabled_mcp_servers] : [...fallbackMcp];
+      map.set(persona.id, {
+        modelId: persona.default_model_id || fallbackModel,
+        ragEnabled: persona.rag_enabled ?? DEFAULT_RAG_ENABLED,
+        streamingEnabled: persona.streaming_enabled ?? DEFAULT_STREAMING_ENABLED,
+        mcpServers
+      });
+    });
+    return map;
+  }, [config, globalDefaultMcpServers]);
   const buttonStyles = useMemo(
     () => ({
       primary:
@@ -651,7 +674,18 @@ export default function Workspace({ user, onLogout }) {
                       <select
                         className="mt-2 w-52 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-700 shadow-inner focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/30 disabled:cursor-not-allowed disabled:opacity-60"
                         value={activeSession?.persona_id || ''}
-                        onChange={(event) => handleSessionFieldChange(activeSessionId, { persona_id: event.target.value })}
+                        onChange={(event) => {
+                          const nextPersonaId = event.target.value;
+                          const defaults = personaDefaultsMap.get(nextPersonaId);
+                          const patch = { persona_id: nextPersonaId };
+                          if (defaults) {
+                            patch.model_id = defaults.modelId;
+                            patch.rag_enabled = defaults.ragEnabled;
+                            patch.streaming_enabled = defaults.streamingEnabled;
+                            patch.enabled_mcp_servers = [...defaults.mcpServers];
+                          }
+                          handleSessionFieldChange(activeSessionId, patch);
+                        }}
                         disabled={!activeSession || sending}
                       >
                         {personaOptions.map((persona) => (
