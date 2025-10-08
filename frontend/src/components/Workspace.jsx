@@ -53,6 +53,26 @@ function getAvatarGlyph(role, user) {
   return 'ℹ️';
 }
 
+function parseMessageForThoughts(content) {
+  if (!content || typeof content !== 'string') {
+    return { displayContent: content, thoughts: null };
+  }
+  const pattern = /<think>([\s\S]*?)<\/think>/gi;
+  const thoughts = [];
+  let match;
+  while ((match = pattern.exec(content)) !== null) {
+    const value = match[1].trim();
+    if (value) {
+      thoughts.push(value);
+    }
+  }
+  const displayContent = content.replace(pattern, '').trim();
+  return {
+    displayContent,
+    thoughts: thoughts.length ? thoughts : null
+  };
+}
+
 export default function Workspace({ user, onLogout }) {
   const [config, setConfig] = useState(null);
   const [models, setModels] = useState([]);
@@ -78,6 +98,7 @@ export default function Workspace({ user, onLogout }) {
   const [toolResult, setToolResult] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
   const [isMcpModalOpen, setIsMcpModalOpen] = useState(false);
+  const [expandedThoughts, setExpandedThoughts] = useState({});
   const appShellRef = useRef(null);
   const sendAbortControllerRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -401,6 +422,16 @@ export default function Workspace({ user, onLogout }) {
     setSelectedRunDetails(detail);
   };
 
+  const toggleThoughtsForMessage = useCallback(
+    (messageId) => {
+      setExpandedThoughts((prev) => ({
+        ...prev,
+        [messageId]: !prev[messageId]
+      }));
+    },
+    [setExpandedThoughts]
+  );
+
   const handleExecuteTool = async () => {
     if (!activeSessionId || !toolServer || !toolName) {
       setStatusMessage('Select a server and tool before running.');
@@ -562,107 +593,108 @@ export default function Workspace({ user, onLogout }) {
           )}
         </div>
         <main
-          className="glass-card relative flex min-h-[calc(100vh-3rem)] flex-1 flex-col overflow-hidden border border-white/50 bg-white/80 shadow-card"
+          className="glass-card relative grid h-[calc(100vh-3rem)] flex-1 grid-rows-[auto,1fr,auto] overflow-hidden border border-white/50 bg-white/80 shadow-card"
           aria-busy={sending}
         >
-          <header className="flex flex-col gap-6 border-b border-slate-200/70 px-8 py-6 backdrop-blur">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <button className={buttonStyles.ghost} onClick={toggleSidebarVisibility}>
-                  {sidebarHidden ? 'Show Chats' : 'Hide Chats'}
-                </button>
-                <button className={buttonStyles.ghost} onClick={toggleActivityVisibility}>
-                  {activityVisible ? 'Hide Activity' : 'Show Activity'}
-                </button>
-              </div>
-              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/60 px-3 py-2 text-sm font-semibold text-slate-600">
-                <span>{user?.full_name || user?.email}</span>
-                <button className={buttonStyles.iconMuted} onClick={onLogout} title="Logout">
-                  ⎋
-                </button>
-              </div>
-            </div>
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-              <div className="space-y-3">
-                <span className={buttonStyles.pill}>{activeSession ? 'Active Chat' : 'Welcome'}</span>
-                <h1 className="text-2xl font-semibold text-slate-900">
-                  {activeSession?.title || 'Select or create a chat'}
-                </h1>
-                <p className="max-w-xl text-sm text-slate-500">
-                  Craft prompts, switch personas, and orchestrate MCP tooling from one canvas.
-                </p>
-              </div>
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-wrap items-end gap-4">
-                  <label className="flex flex-col text-sm font-semibold text-slate-500">
-                    <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Model</span>
-                    <select
-                      className="mt-2 w-52 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-700 shadow-inner focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/30 disabled:cursor-not-allowed disabled:opacity-60"
-                      value={activeSession?.model_id || ''}
-                      onChange={(event) => handleSessionFieldChange(activeSessionId, { model_id: event.target.value })}
-                      disabled={!activeSession || sending}
-                    >
-                      {models.map((model) => (
-                        <option key={model.id} value={model.id}>
-                          {model.id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col text-sm font-semibold text-slate-500">
-                    <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Persona</span>
-                    <select
-                      className="mt-2 w-52 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-700 shadow-inner focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/30 disabled:cursor-not-allowed disabled:opacity-60"
-                      value={activeSession?.persona_id || ''}
-                      onChange={(event) => handleSessionFieldChange(activeSessionId, { persona_id: event.target.value })}
-                      disabled={!activeSession || sending}
-                    >
-                      {personaOptions.map((persona) => (
-                        <option key={persona.id} value={persona.id}>
-                          {persona.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button className={buttonStyles.subtle} onClick={handleOpenMcpModal} disabled={!activeSession}>
-                    MCP Servers
+          <div className="border-b border-slate-200/70 bg-white/80 backdrop-blur">
+            <header className="flex flex-col gap-6 px-8 py-6">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <button className={buttonStyles.ghost} onClick={toggleSidebarVisibility}>
+                    {sidebarHidden ? 'Show Chats' : 'Hide Chats'}
+                  </button>
+                  <button className={buttonStyles.ghost} onClick={toggleActivityVisibility}>
+                    {activityVisible ? 'Hide Activity' : 'Show Activity'}
                   </button>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-brand-primary/30 hover:text-brand-primary">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-brand-primary"
-                      checked={activeSession?.rag_enabled || false}
-                      onChange={(event) => handleSessionFieldChange(activeSessionId, { rag_enabled: event.target.checked })}
-                      disabled={!activeSession || sending}
-                    />
-                    RAG Enabled
-                  </label>
-                  <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-brand-primary/30 hover:text-brand-primary">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-brand-primary"
-                      checked={activeSession?.streaming_enabled || false}
-                      onChange={(event) => handleSessionFieldChange(activeSessionId, { streaming_enabled: event.target.checked })}
-                      disabled={!activeSession || sending}
-                    />
-                    Streaming
-                  </label>
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/60 px-3 py-2 text-sm font-semibold text-slate-600">
+                  <span>{user?.full_name || user?.email}</span>
+                  <button className={buttonStyles.iconMuted} onClick={onLogout} title="Logout">
+                    ⎋
+                  </button>
                 </div>
               </div>
-            </div>
-          </header>
-
-          {statusMessage && (
-            <div className="px-8 pt-4">
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 shadow-inner">
-                {statusMessage}
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                <div className="space-y-3">
+                  <span className={buttonStyles.pill}>{activeSession ? 'Active Chat' : 'Welcome'}</span>
+                  <h1 className="text-2xl font-semibold text-slate-900">
+                    {activeSession?.title || 'Select or create a chat'}
+                  </h1>
+                  <p className="max-w-xl text-sm text-slate-500">
+                    Craft prompts, switch personas, and orchestrate MCP tooling from one canvas.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-wrap items-end gap-4">
+                    <label className="flex flex-col text-sm font-semibold text-slate-500">
+                      <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Model</span>
+                      <select
+                        className="mt-2 w-52 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-700 shadow-inner focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/30 disabled:cursor-not-allowed disabled:opacity-60"
+                        value={activeSession?.model_id || ''}
+                        onChange={(event) => handleSessionFieldChange(activeSessionId, { model_id: event.target.value })}
+                        disabled={!activeSession || sending}
+                      >
+                        {models.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col text-sm font-semibold text-slate-500">
+                      <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Persona</span>
+                      <select
+                        className="mt-2 w-52 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-700 shadow-inner focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/30 disabled:cursor-not-allowed disabled:opacity-60"
+                        value={activeSession?.persona_id || ''}
+                        onChange={(event) => handleSessionFieldChange(activeSessionId, { persona_id: event.target.value })}
+                        disabled={!activeSession || sending}
+                      >
+                        {personaOptions.map((persona) => (
+                          <option key={persona.id} value={persona.id}>
+                            {persona.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button className={buttonStyles.subtle} onClick={handleOpenMcpModal} disabled={!activeSession}>
+                      MCP Servers
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-brand-primary/30 hover:text-brand-primary">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-brand-primary"
+                        checked={activeSession?.rag_enabled || false}
+                        onChange={(event) => handleSessionFieldChange(activeSessionId, { rag_enabled: event.target.checked })}
+                        disabled={!activeSession || sending}
+                      />
+                      RAG Enabled
+                    </label>
+                    <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-brand-primary/30 hover:text-brand-primary">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-brand-primary"
+                        checked={activeSession?.streaming_enabled || false}
+                        onChange={(event) => handleSessionFieldChange(activeSessionId, { streaming_enabled: event.target.checked })}
+                        disabled={!activeSession || sending}
+                      />
+                      Streaming
+                    </label>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            </header>
+            {statusMessage && (
+              <div className="px-8 pb-4">
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 shadow-inner">
+                  {statusMessage}
+                </div>
+              </div>
+            )}
+          </div>
 
-          <section ref={messagesContainerRef} className="flex-1 space-y-4 overflow-y-auto px-8 pb-8" aria-live="polite">
+          <section ref={messagesContainerRef} className="space-y-4 overflow-y-auto px-8 pb-8" aria-live="polite">
             {visibleMessages.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-4 rounded-3xl border border-dashed border-slate-200 bg-white/60 py-24 text-center">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-primary/10 text-3xl">💬</div>
@@ -672,40 +704,76 @@ export default function Workspace({ user, onLogout }) {
                 </p>
               </div>
             )}
-            {visibleMessages.map((message) => (
-              <article
-                key={message.id}
-                className={classNames(
-                  'flex gap-4 rounded-3xl border px-5 py-4 shadow-sm backdrop-blur-sm transition hover:border-brand-primary/40',
-                  messageRoleClasses[message.role] || 'border-slate-200 bg-white/70'
-                )}
-              >
-                <div
+            {visibleMessages.map((message) => {
+              const { displayContent, thoughts } = parseMessageForThoughts(message.content);
+              const hasThoughts = message.role === 'assistant' && thoughts;
+              const isThoughtsExpanded = !!expandedThoughts[message.id];
+              return (
+                <article
+                  key={message.id}
                   className={classNames(
-                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-base font-semibold',
-                    getAvatarTone(message.role)
+                    'flex gap-4 rounded-3xl border px-5 py-4 shadow-sm backdrop-blur-sm transition hover:border-brand-primary/40',
+                    messageRoleClasses[message.role] || 'border-slate-200 bg-white/70'
                   )}
-                  aria-hidden="true"
                 >
-                  {getAvatarGlyph(message.role, user)}
-                </div>
-                <div className="flex flex-1 flex-col gap-2">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                    <span className="font-semibold text-slate-700">{getRoleLabel(message.role)}</span>
-                    <span aria-hidden="true">•</span>
-                    <span>{formatDate(message.created_at)}</span>
-                    {message.edited_from_message_id && (
-                      <span className="rounded-full bg-slate-900/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-600">
-                        Edited
-                      </span>
+                  <div
+                    className={classNames(
+                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-base font-semibold',
+                      getAvatarTone(message.role)
+                    )}
+                    aria-hidden="true"
+                  >
+                    {getAvatarGlyph(message.role, user)}
+                  </div>
+                  <div className="flex flex-1 flex-col gap-3">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span className="font-semibold text-slate-700">{getRoleLabel(message.role)}</span>
+                      <span aria-hidden="true">•</span>
+                      <span>{formatDate(message.created_at)}</span>
+                      {message.edited_from_message_id && (
+                        <span className="rounded-full bg-slate-900/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-600">
+                          Edited
+                        </span>
+                      )}
+                    </div>
+                    {hasThoughts && (
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleThoughtsForMessage(message.id)}
+                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-100/60 px-4 py-2 text-left text-xs font-semibold uppercase tracking-[0.3em] text-slate-600 transition hover:border-brand-primary/40 hover:text-brand-primary"
+                          aria-expanded={isThoughtsExpanded}
+                          aria-controls={`message-thoughts-${message.id}`}
+                        >
+                          <span>Thoughts</span>
+                          <span aria-hidden="true">{isThoughtsExpanded ? '▴' : '▾'}</span>
+                        </button>
+                        {isThoughtsExpanded && (
+                          <div
+                            id={`message-thoughts-${message.id}`}
+                            className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm leading-relaxed text-slate-600 shadow-inner"
+                          >
+                            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-600">
+                              {thoughts.join('\n\n')}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {displayContent && (
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                        {displayContent}
+                      </div>
+                    )}
+                    {!displayContent && !hasThoughts && (
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                        {message.content}
+                      </div>
                     )}
                   </div>
-                  <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-                    {message.content}
-                  </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </section>
 
           <footer className="border-t border-slate-200/70 bg-white/80 px-8 py-6 backdrop-blur">

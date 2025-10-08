@@ -210,7 +210,8 @@ All under `/config/`, validated via JSON Schema.
 - **Login** → **Workspace**  
 - **Left rail:** new chat, list (rename/delete), global settings (read-only view of admin config).  
 - **Chat header:** model dropdown, persona dropdown, toggle RAG, choose MCP servers, toggle streaming.  
-- **Composer:** edit last user message; attach files; send.  
+- **Composer:** pinned to the bottom of the viewport; edit last user message; attach files; send.  
+- **Assistant responses:** when backend responses contain `<think>` blocks, show them as a collapsed "Thoughts" bar that expands to reveal the hidden content on demand.  
 - **Right drawer (Internal Activity):** opens per-turn trace with tabs: Timeline • Prompts • RAG • Tools • Metrics.  
 - **Branding:** F5 red (#E21D38) accents, neutral backgrounds; avoid low-contrast tints.
 
