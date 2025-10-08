@@ -118,8 +118,7 @@ export default function Workspace({ user, onLogout }) {
   const [sending, setSending] = useState(false);
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(320);
-  const [activityVisible, setActivityVisible] = useState(false);
-  const [activityWidth, setActivityWidth] = useState(380);
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [activeResizer, setActiveResizer] = useState(null);
   const [runs, setRuns] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
@@ -140,7 +139,6 @@ export default function Workspace({ user, onLogout }) {
   const [ragModalStatus, setRagModalStatus] = useState(null);
   const [ragDeletingId, setRagDeletingId] = useState(null);
   const [expandedThoughts, setExpandedThoughts] = useState({});
-  const appShellRef = useRef(null);
   const sendAbortControllerRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const previousMessageCountRef = useRef(0);
@@ -253,6 +251,23 @@ export default function Workspace({ user, onLogout }) {
   }, [activeSessionId]);
 
   useEffect(() => {
+    if (!isActivityModalOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsActivityModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isActivityModalOpen]);
+
+  useEffect(() => {
+    setIsActivityModalOpen(false);
+  }, [activeSessionId]);
+
+  useEffect(() => {
     if (!isRagModalOpen) return undefined;
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
@@ -305,25 +320,14 @@ export default function Workspace({ user, onLogout }) {
   }, [messages, scrollMessagesToBottom]);
 
   useEffect(() => {
-    if (!activeResizer) return undefined;
+    if (activeResizer !== 'left') return undefined;
 
     const handlePointerMove = (event) => {
       event.preventDefault();
-      if (activeResizer === 'left') {
-        const minWidth = 220;
-        const maxWidth = 520;
-        const nextWidth = Math.min(Math.max(event.clientX, minWidth), maxWidth);
-        setSidebarWidth(nextWidth);
-      } else if (activeResizer === 'right') {
-        const shell = appShellRef.current;
-        if (!shell) return;
-        const rect = shell.getBoundingClientRect();
-        const minWidth = 200;
-        const maxWidth = 1800;
-        const distance = rect.right - event.clientX;
-        const nextWidth = Math.min(Math.max(distance, minWidth), maxWidth);
-        setActivityWidth(nextWidth);
-      }
+      const minWidth = 220;
+      const maxWidth = 520;
+      const nextWidth = Math.min(Math.max(event.clientX, minWidth), maxWidth);
+      setSidebarWidth(nextWidth);
     };
 
     const handlePointerUp = () => {
@@ -378,18 +382,17 @@ export default function Workspace({ user, onLogout }) {
     setActiveResizer('left');
   }, []);
 
-  const handleActivityResizeStart = useCallback((event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setActiveResizer('right');
-  }, []);
-
   const toggleSidebarVisibility = useCallback(() => {
     setSidebarHidden((prev) => !prev);
   }, []);
 
-  const toggleActivityVisibility = useCallback(() => {
-    setActivityVisible((prev) => !prev);
+  const handleOpenActivityModal = useCallback(() => {
+    if (!activeSession) return;
+    setIsActivityModalOpen(true);
+  }, [activeSession]);
+
+  const handleCloseActivityModal = useCallback(() => {
+    setIsActivityModalOpen(false);
   }, []);
 
   const handleOpenMcpModal = useCallback(() => {
@@ -658,6 +661,8 @@ export default function Workspace({ user, onLogout }) {
     () => messages.filter((message) => !hiddenMessageIds.has(message.id)),
     [messages, hiddenMessageIds]
   );
+  const selectedRunModelId = selectedRunDetails?.model_id || selectedRun?.model_id || 'model';
+  const selectedRunStartedAt = selectedRunDetails?.started_at || selectedRun?.started_at || null;
 
   return (
     <div className="relative min-h-screen">
@@ -665,7 +670,7 @@ export default function Workspace({ user, onLogout }) {
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[32rem] bg-[radial-gradient(circle_at_top,_rgba(226,29,56,0.16),_transparent_65%)]"
       />
-      <div ref={appShellRef} className={appShellClasses}>
+      <div className={appShellClasses}>
         <div
           className="relative flex h-full overflow-visible transition-[width,opacity] duration-300"
           style={{ width: sidebarHidden ? '0px' : `${sidebarWidth}px` }}
@@ -788,11 +793,15 @@ export default function Workspace({ user, onLogout }) {
                   <button className={buttonStyles.ghost} onClick={toggleSidebarVisibility}>
                     {sidebarHidden ? 'Show Chats' : 'Hide Chats'}
                   </button>
-                  <button className={buttonStyles.ghost} onClick={toggleActivityVisibility}>
-                    {activityVisible ? 'Hide Activity' : 'Show Activity'}
-                  </button>
                   <button className={buttonStyles.ghost} onClick={handleOpenRagModal}>
                     RAG
+                  </button>
+                  <button
+                    className={buttonStyles.ghost}
+                    onClick={handleOpenActivityModal}
+                    disabled={!activeSession}
+                  >
+                    Internal Activity
                   </button>
                 </div>
                 <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/60 px-3 py-2 text-sm font-semibold text-slate-600">
@@ -1041,62 +1050,87 @@ export default function Workspace({ user, onLogout }) {
               </div>
             </div>
           </footer>
-          {activityVisible && (
-            <div
-              className="absolute top-1/2 right-[-28px] z-40 flex -translate-y-1/2"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize activity panel"
-              onPointerDown={handleActivityResizeStart}
-              style={{ cursor: 'col-resize' }}
-            >
-              <div className="flex h-28 w-8 items-center justify-center rounded-full border-2 border-brand-primary/30 bg-white text-brand-primary shadow-lg transition hover:border-brand-primary hover:bg-brand-primary/10">
-                <span aria-hidden="true" className="text-base font-semibold tracking-wide">
-                  ⇆
-                </span>
-              </div>
-            </div>
-          )}
         </main>
+      </div>
+      {isActivityModalOpen && (
         <div
-          className="relative flex h-full overflow-visible transition-[width,opacity] duration-300"
-          style={{ width: activityVisible ? `${activityWidth}px` : '0px' }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-6 py-12 backdrop-blur-sm"
+          onClick={handleCloseActivityModal}
         >
-          <aside
-            className={classNames(
-              'flex h-full flex-1 flex-col overflow-hidden rounded-3xl border border-white/60 bg-white/75 shadow-card backdrop-blur transition-opacity duration-200',
-              !activityVisible && 'pointer-events-none opacity-0'
-            )}
-            aria-hidden={!activityVisible}
+          <div
+            className="glass-card w-full max-w-6xl overflow-hidden border border-white/60 bg-white/90 text-slate-900 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="activity-modal-title"
+            aria-describedby="activity-modal-description"
+            onClick={(event) => event.stopPropagation()}
           >
-            <div className="border-b border-slate-200/70 bg-white/80 px-6 py-5">
-              <h2 className="text-lg font-semibold text-slate-900">Internal Activity</h2>
-              <p className="text-sm text-slate-500">Inspect retrieval, tools, and prompts per run.</p>
-            </div>
-            <div className="flex flex-1 flex-col">
-              <div className="max-h-60 space-y-3 overflow-y-auto px-6 py-4">
-                {runs.map((run) => (
-                  <button
-                    key={run.id}
-                    className={classNames(
-                      'w-full rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-left text-sm shadow-sm transition hover:border-brand-primary/40 hover:bg-white',
-                      selectedRun?.id === run.id && 'border-brand-primary/60 bg-brand-primary/10 text-brand-primary'
-                    )}
-                    onClick={() => handleSelectRun(run)}
-                  >
-                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
-                      <span>{run.status.toUpperCase()}</span>
-                      <span>{formatDate(run.started_at)}</span>
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-slate-700">{run.model_id || 'model'}</div>
-                  </button>
-                ))}
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 px-6 py-5">
+              <div>
+                <h2 id="activity-modal-title" className="text-xl font-semibold text-slate-900">
+                  Internal Activity
+                </h2>
+                <p id="activity-modal-description" className="mt-1 text-sm text-slate-500">
+                  Inspect retrieval, tools, and prompts per run.
+                </p>
               </div>
-              <div className="flex-1 overflow-y-auto px-6 py-6">
+              <button
+                className={buttonStyles.iconMuted}
+                onClick={handleCloseActivityModal}
+                aria-label="Close activity modal"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="grid gap-6 px-6 py-6 lg:grid-cols-[320px,1fr]">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Runs</h3>
+                  <p className="text-sm text-slate-500">
+                    {runs.length
+                      ? 'Select a run to explore its trace timeline.'
+                      : 'Send a prompt to see model responses, trace tools, and RAG activity.'}
+                  </p>
+                </div>
+                {runs.length ? (
+                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                    {runs.map((run) => (
+                      <button
+                        key={run.id}
+                        className={classNames(
+                          'w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-left text-sm shadow-sm transition hover:border-brand-primary/40 hover:bg-white',
+                          selectedRun?.id === run.id && 'border-brand-primary/60 bg-brand-primary/10 text-brand-primary'
+                        )}
+                        onClick={() => handleSelectRun(run)}
+                      >
+                        <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
+                          <span>{run.status.toUpperCase()}</span>
+                          <span>{formatDate(run.started_at)}</span>
+                        </div>
+                        <div className="mt-1 text-sm font-semibold text-slate-700">{run.model_id || 'model'}</div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-6 text-sm text-slate-500">
+                    Send a prompt to populate internal activity logs.
+                  </div>
+                )}
+              </div>
+              <div className="min-h-[280px] space-y-4 rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-inner">
                 {selectedRunDetails ? (
                   <div className="space-y-4">
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Run Timeline</h3>
-                    <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Model</div>
+                        <div className="text-sm font-semibold text-slate-700">{selectedRunModelId}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Started</div>
+                        <div>{selectedRunStartedAt ? formatDate(selectedRunStartedAt) : '—'}</div>
+                      </div>
+                    </div>
+                    <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
                       {selectedRunDetails.steps.map((step) => (
                         <div key={step.id} className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
                           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
@@ -1127,9 +1161,9 @@ export default function Workspace({ user, onLogout }) {
                 )}
               </div>
             </div>
-          </aside>
+          </div>
         </div>
-      </div>
+      )}
       {isRagModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-6 py-12 backdrop-blur-sm"
