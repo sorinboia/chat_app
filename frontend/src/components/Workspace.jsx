@@ -818,20 +818,39 @@ export default function Workspace({ user, onLogout }) {
 
           <footer className="border-t border-slate-200/70 bg-white/80 px-8 py-6 backdrop-blur">
             <div className="flex flex-col gap-4">
-              <textarea
-                value={composerText}
-                onChange={(event) => {
-                  if (!sending) {
-                    setComposerText(event.target.value);
-                  }
-                }}
-                onKeyDown={handleComposerKeyDown}
-                placeholder="Send a message..."
-                rows={3}
-                readOnly={sending}
-                aria-disabled={sending}
-                className="min-h-[120px] resize-none rounded-3xl border border-slate-200 bg-white/70 px-5 py-4 text-sm leading-relaxed text-slate-700 shadow-inner focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/30 disabled:cursor-not-allowed disabled:opacity-60"
-              />
+              <div className="relative">
+                <textarea
+                  value={composerText}
+                  onChange={(event) => {
+                    if (!sending) {
+                      setComposerText(event.target.value);
+                    }
+                  }}
+                  onKeyDown={handleComposerKeyDown}
+                  placeholder="Send a message..."
+                  rows={3}
+                  readOnly={sending}
+                  disabled={sending}
+                  aria-disabled={sending}
+                  className={classNames(
+                    'min-h-[120px] w-full resize-none rounded-3xl border border-slate-200 bg-white/70 px-5 py-4 text-sm leading-relaxed text-slate-700 shadow-inner transition focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/30 disabled:cursor-not-allowed disabled:opacity-60',
+                    sending && 'border-brand-primary/40 text-slate-500'
+                  )}
+                />
+                {sending && (
+                  <div className="composer-sending-overlay" role="status" aria-live="polite">
+                    <div className="composer-sending-overlay__sheen" aria-hidden="true" />
+                    <div className="composer-sending-overlay__content">
+                      <div className="composer-sending-overlay__dots" aria-hidden="true">
+                        <span className="composer-sending-overlay__dot" />
+                        <span className="composer-sending-overlay__dot" />
+                        <span className="composer-sending-overlay__dot" />
+                      </div>
+                      <span className="composer-sending-overlay__label">Sending to the model...</span>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="relative inline-flex cursor-pointer items-center overflow-hidden rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-brand-primary/30 hover:text-brand-primary">
