@@ -821,13 +821,11 @@ export default function Workspace({ user, onLogout }) {
                     )}
                     {displayContent && (
                       message.role === 'assistant' ? (
-                        <ReactMarkdown
-                          className="markdown-content"
-                          remarkPlugins={[remarkGfm]}
-                          components={markdownComponents}
-                        >
-                          {displayContent}
-                        </ReactMarkdown>
+                        <div className="markdown-content">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                            {displayContent}
+                          </ReactMarkdown>
+                        </div>
                       ) : (
                         <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
                           {displayContent}
