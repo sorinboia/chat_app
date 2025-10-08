@@ -142,6 +142,9 @@ export default function Workspace({ user, onLogout }) {
   const sendAbortControllerRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const previousMessageCountRef = useRef(0);
+  const responseAudioRef = useRef(null);
+  const lastAssistantMessageIdRef = useRef(null);
+  const responseAudioQueuedRef = useRef(false);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || null,
@@ -251,6 +254,21 @@ export default function Workspace({ user, onLogout }) {
   }, [activeSessionId]);
 
   useEffect(() => {
+    const audio = new Audio('/sounds/llm-response.wav');
+    audio.volume = 0.4;
+    responseAudioRef.current = audio;
+    return () => {
+      audio.pause();
+      responseAudioRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    lastAssistantMessageIdRef.current = null;
+    responseAudioQueuedRef.current = false;
+  }, [activeSessionId]);
+
+  useEffect(() => {
     if (!isActivityModalOpen) return undefined;
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
@@ -318,6 +336,48 @@ export default function Workspace({ user, onLogout }) {
     scrollMessagesToBottom(behavior);
     previousMessageCountRef.current = messages.length;
   }, [messages, scrollMessagesToBottom]);
+
+  useEffect(() => {
+    if (!messages.length) {
+      lastAssistantMessageIdRef.current = null;
+      return;
+    }
+
+    const latestAssistant = [...messages]
+      .slice()
+      .reverse()
+      .find((message) => message.role === 'assistant');
+
+    if (!latestAssistant) {
+      return;
+    }
+
+    if (latestAssistant.id === lastAssistantMessageIdRef.current) {
+      return;
+    }
+
+    lastAssistantMessageIdRef.current = latestAssistant.id;
+
+    if (!responseAudioQueuedRef.current) {
+      return;
+    }
+
+    responseAudioQueuedRef.current = false;
+    const audio = responseAudioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    try {
+      audio.currentTime = 0;
+      const playback = audio.play();
+      if (playback && typeof playback.catch === 'function') {
+        playback.catch(() => {});
+      }
+    } catch (error) {
+      console.warn('Unable to play response sound', error);
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (activeResizer !== 'left') return undefined;
@@ -544,8 +604,10 @@ export default function Workspace({ user, onLogout }) {
       const controller = new AbortController();
       sendAbortControllerRef.current = controller;
       if (editingMessageId) {
+        responseAudioQueuedRef.current = true;
         await editMessage(activeSessionId, editingMessageId, composerText.trim(), { signal: controller.signal });
       } else {
+        responseAudioQueuedRef.current = true;
         await sendMessage(activeSessionId, composerText.trim(), { signal: controller.signal });
       }
       setComposerText('');
@@ -564,6 +626,7 @@ export default function Workspace({ user, onLogout }) {
         console.error(error);
         setStatusMessage('Failed to send message. Check console for details.');
       }
+      responseAudioQueuedRef.current = false;
     } finally {
       if (sendAbortControllerRef.current) {
         sendAbortControllerRef.current = null;
@@ -577,6 +640,7 @@ export default function Workspace({ user, onLogout }) {
     if (controller) {
       controller.abort();
     }
+    responseAudioQueuedRef.current = false;
   };
 
   const handleStartEditing = () => {
@@ -1058,12 +1122,13 @@ export default function Workspace({ user, onLogout }) {
           onClick={handleCloseActivityModal}
         >
           <div
-            className="glass-card w-full max-w-6xl overflow-hidden border border-white/60 bg-white/90 text-slate-900 shadow-2xl"
+            className="glass-card flex h-full max-h-[calc(100vh-4rem)] min-h-[24rem] w-full max-w-6xl flex-col border border-white/60 bg-white/95 text-slate-900 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="activity-modal-title"
             aria-describedby="activity-modal-description"
             onClick={(event) => event.stopPropagation()}
+            style={{ resize: 'both', overflow: 'auto' }}
           >
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 px-6 py-5">
               <div>
@@ -1082,83 +1147,85 @@ export default function Workspace({ user, onLogout }) {
                 ✕
               </button>
             </div>
-            <div className="grid gap-6 px-6 py-6 lg:grid-cols-[320px,1fr]">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Runs</h3>
-                  <p className="text-sm text-slate-500">
-                    {runs.length
-                      ? 'Select a run to explore its trace timeline.'
-                      : 'Send a prompt to see model responses, trace tools, and RAG activity.'}
-                  </p>
-                </div>
-                {runs.length ? (
-                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                    {runs.map((run) => (
-                      <button
-                        key={run.id}
-                        className={classNames(
-                          'w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-left text-sm shadow-sm transition hover:border-brand-primary/40 hover:bg-white',
-                          selectedRun?.id === run.id && 'border-brand-primary/60 bg-brand-primary/10 text-brand-primary'
-                        )}
-                        onClick={() => handleSelectRun(run)}
-                      >
-                        <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
-                          <span>{run.status.toUpperCase()}</span>
-                          <span>{formatDate(run.started_at)}</span>
-                        </div>
-                        <div className="mt-1 text-sm font-semibold text-slate-700">{run.model_id || 'model'}</div>
-                      </button>
-                    ))}
+            <div className="flex-1 overflow-auto px-6 py-6">
+              <div className="grid h-full gap-6 lg:grid-cols-[320px,1fr] lg:items-start">
+                <div className="flex h-full flex-col space-y-4 overflow-hidden">
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Runs</h3>
+                    <p className="text-sm text-slate-500">
+                      {runs.length
+                        ? 'Select a run to explore its trace timeline.'
+                        : 'Send a prompt to see model responses, trace tools, and RAG activity.'}
+                    </p>
                   </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-6 text-sm text-slate-500">
-                    Send a prompt to populate internal activity logs.
-                  </div>
-                )}
-              </div>
-              <div className="min-h-[280px] space-y-4 rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-inner">
-                {selectedRunDetails ? (
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-                      <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Model</div>
-                        <div className="text-sm font-semibold text-slate-700">{selectedRunModelId}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Started</div>
-                        <div>{selectedRunStartedAt ? formatDate(selectedRunStartedAt) : '—'}</div>
-                      </div>
-                    </div>
-                    <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
-                      {selectedRunDetails.steps.map((step) => (
-                        <div key={step.id} className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                              {step.type}
-                            </span>
-                            <span>{formatDate(step.ts)}</span>
+                  {runs.length ? (
+                    <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+                      {runs.map((run) => (
+                        <button
+                          key={run.id}
+                          className={classNames(
+                            'w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-left text-sm shadow-sm transition hover:border-brand-primary/40 hover:bg-white',
+                            selectedRun?.id === run.id && 'border-brand-primary/60 bg-brand-primary/10 text-brand-primary'
+                          )}
+                          onClick={() => handleSelectRun(run)}
+                        >
+                          <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
+                            <span>{run.status.toUpperCase()}</span>
+                            <span>{formatDate(run.started_at)}</span>
                           </div>
-                          {step.label && <div className="mt-2 text-sm font-semibold text-slate-700">{step.label}</div>}
-                          {step.input_json && (
-                            <pre className="mt-2 max-h-60 overflow-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                              {JSON.stringify(step.input_json, null, 2)}
-                            </pre>
-                          )}
-                          {step.output_json && (
-                            <pre className="mt-2 max-h-60 overflow-auto rounded-xl border border-slate-200 bg-slate-900/90 px-3 py-2 text-xs text-white/80">
-                              {JSON.stringify(step.output_json, null, 2)}
-                            </pre>
-                          )}
-                        </div>
+                          <div className="mt-1 text-sm font-semibold text-slate-700">{run.model_id || 'model'}</div>
+                        </button>
                       ))}
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-8 text-sm text-slate-500">
-                    Select a run to inspect details.
-                  </div>
-                )}
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-6 text-sm text-slate-500">
+                      Send a prompt to populate internal activity logs.
+                    </div>
+                  )}
+                </div>
+                <div className="flex min-h-[280px] flex-col rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-inner">
+                  {selectedRunDetails ? (
+                    <div className="flex h-full flex-col space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Model</div>
+                          <div className="text-sm font-semibold text-slate-700">{selectedRunModelId}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Started</div>
+                          <div>{selectedRunStartedAt ? formatDate(selectedRunStartedAt) : '—'}</div>
+                        </div>
+                      </div>
+                      <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+                        {selectedRunDetails.steps.map((step) => (
+                          <div key={step.id} className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                {step.type}
+                              </span>
+                              <span>{formatDate(step.ts)}</span>
+                            </div>
+                            {step.label && <div className="mt-2 text-sm font-semibold text-slate-700">{step.label}</div>}
+                            {step.input_json && (
+                              <pre className="mt-2 max-h-[24rem] overflow-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono text-slate-600 whitespace-pre-wrap break-words">
+                                {JSON.stringify(step.input_json, null, 2)}
+                              </pre>
+                            )}
+                            {step.output_json && (
+                              <pre className="mt-2 max-h-[24rem] overflow-auto rounded-xl border border-slate-200 bg-slate-900/90 px-3 py-2 text-xs font-mono text-white/80 whitespace-pre-wrap break-words">
+                                {JSON.stringify(step.output_json, null, 2)}
+                              </pre>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-8 text-sm text-slate-500">
+                      Select a run to inspect details.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
