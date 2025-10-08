@@ -169,16 +169,26 @@ All under `/config/`, validated via JSON Schema.
     {
       "id": "se-default",
       "name": "Solutions Engineer",
-      "system_prompt": "You are a helpful technical solutions engineer. Be concise, cite internal context where relevant, and prefer tool use when asked for concrete data."
+      "system_prompt": "You are a helpful technical solutions engineer. Be concise, cite internal context where relevant, and prefer tool use when asked for concrete data.",
+      "default_model_id": "llama3.1",
+      "enabled_mcp_servers": ["search-stdio"],
+      "rag_enabled": true,
+      "streaming_enabled": false
     },
     {
       "id": "debugger",
       "name": "Trace Explainer",
-      "system_prompt": "Explain each step you will take before executing tools. Be explicit about assumptions. Do NOT include chain-of-thought."
+      "system_prompt": "Explain each step you will take before executing tools. Be explicit about assumptions. Do NOT include chain-of-thought.",
+      "default_model_id": "llama3.1-thinking",
+      "enabled_mcp_servers": [],
+      "rag_enabled": false,
+      "streaming_enabled": true
     }
   ]
 }
 ```
+
+> **Persona defaults:** When provided, `default_model_id`, `enabled_mcp_servers`, `rag_enabled`, and `streaming_enabled` apply when a session starts with that persona (or when the persona becomes the default). Each field is optional and falls back to the platform defaults if omitted; changing personas later keeps any user overrides.
 
 ### 13.5 `/config/secrets.json`
 ```json
