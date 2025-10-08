@@ -5,12 +5,11 @@
       "id": "mcp",
       "name": "MCP",
       "system_prompt": "You are a helpful technical solutions engineer. Be concise, cite internal context where relevant, and prefer tool use when asked for concrete data. If the tool fails to run understand why and try again",
-      "default_model_id": "llama3.2:3b",
+      "default_model_id": "qwen3:14b",
       "enabled_mcp_servers": [
-        "playwright",
-        "filesystem-tools"
+        "playwright"
       ],
-      "rag_enabled": true,
+      "rag_enabled": false,
       "streaming_enabled": false
     },
     {

@@ -4,9 +4,7 @@ import copy
 import datetime as dt
 import json
 import logging
-import os
 import re
-import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -24,7 +22,7 @@ from ..core.dependencies import (
     get_trace_service,
     get_uploads_directory,
 )
-from ..models import ChatSession, Message, Upload, User
+from ..models import ChatSession, Message, User
 from ..schemas import (
     MessageResponse,
     MessageEditRequest,
@@ -38,6 +36,7 @@ from ..schemas import (
 from ..services.mcp import MCPService
 from ..services.ollama import OllamaService
 from ..services.rag import RAGService, RetrievedChunk
+from ..services.upload_manager import list_user_uploads, store_upload
 from ..services.tracing import TraceService
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -227,40 +226,20 @@ async def list_messages(
 async def _store_upload(
     file: UploadFile,
     *,
-    uploads_dir: os.PathLike[str],
+    uploads_dir,
     user: User,
     chat_session: ChatSession,
     db: AsyncSession,
     rag_service: RAGService,
-) -> Upload:
-    filename = file.filename or "upload.bin"
-    suffix = os.path.splitext(filename)[1].lower()
-    allowed = {".pdf", ".md", ".txt", ".docx", ".mdx"}
-    if suffix not in allowed:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported file type: {suffix}")
-    data = await file.read()
-    max_size = 5 * 1024 * 1024
-    if len(data) > max_size:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File exceeds 5 MB limit")
-    uploads_dir = os.fspath(uploads_dir)
-    os.makedirs(uploads_dir, exist_ok=True)
-    stored_name = f"{uuid.uuid4()}_{filename}"
-    stored_path = os.path.join(uploads_dir, stored_name)
-    with open(stored_path, "wb") as f:
-        f.write(data)
-    upload = Upload(
-        user_id=user.id,
-        session_id=chat_session.id,
-        filename=filename,
-        path=stored_path,
-        mime=file.content_type or "application/octet-stream",
-        size_bytes=len(data),
+):
+    return await store_upload(
+        file,
+        uploads_dir=uploads_dir,
+        user=user,
+        db=db,
+        rag_service=rag_service,
+        session=chat_session,
     )
-    db.add(upload)
-    await db.commit()
-    await db.refresh(upload)
-    await rag_service.ingest_upload(db, upload, upload.mime)
-    return upload
 
 
 def _resolve_persona_prompt(persona_id: str | None, app_config) -> Optional[str]:
@@ -413,8 +392,13 @@ async def _process_user_turn(
                 rag_service=rag_service,
             )
 
-    stmt_uploads = select(Upload).where(Upload.session_id == chat_session.id)
-    existing_uploads = (await db.execute(stmt_uploads)).scalars().all()
+    existing_uploads = await list_user_uploads(
+        db,
+        user_id=user.id,
+        session=chat_session,
+        include_session_uploads=True,
+        include_global=True,
+    )
 
     retrieved_chunks: List[RetrievedChunk] = []
     if chat_session.rag_enabled and existing_uploads:

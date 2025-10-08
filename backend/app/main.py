@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import auth, config as config_router, models as models_router, sessions, traces
+from .api import auth, config as config_router, models as models_router, rag as rag_router, sessions, traces
 from .core.database import lifespan_context
 from .core.dependencies import get_config_service
 
@@ -28,6 +28,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(config_router.router)
 app.include_router(models_router.router)
+app.include_router(rag_router.router)
 app.include_router(sessions.router)
 app.include_router(traces.router)
 

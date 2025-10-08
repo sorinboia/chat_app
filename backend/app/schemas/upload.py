@@ -20,3 +20,12 @@ class RAGChunkResponse(BaseModel):
     text: str
     score: float
     filename: Optional[str] = None
+
+class RAGQueryRequest(BaseModel):
+    query: str
+    top_k: Optional[int] = None
+
+
+class RAGQueryResponse(BaseModel):
+    chunks: list[RAGChunkResponse]
+

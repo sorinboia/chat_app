@@ -9,7 +9,7 @@ from .session import (
     SessionUpdateRequest,
 )
 from .trace import TraceRunResponse, TraceStepResponse
-from .upload import RAGChunkResponse, UploadResponse
+from .upload import RAGChunkResponse, RAGQueryRequest, RAGQueryResponse, UploadResponse
 from .tool import ToolCallRequest, ToolCallResponse
 
 __all__ = [
@@ -25,6 +25,8 @@ __all__ = [
     "MessageResponse",
     "UploadResponse",
     "RAGChunkResponse",
+    "RAGQueryRequest",
+    "RAGQueryResponse",
     "TraceRunResponse",
     "TraceStepResponse",
     "ToolCallRequest",
