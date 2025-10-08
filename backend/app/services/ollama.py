@@ -40,9 +40,10 @@ class OllamaService:
         self,
         *,
         model: str,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],
         options: Optional[Dict[str, Any]] = None,
-    ) -> str:
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -50,6 +51,8 @@ class OllamaService:
         }
         if options:
             payload["options"] = options
+        if tools:
+            payload["tools"] = tools
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
@@ -59,26 +62,42 @@ class OllamaService:
         except Exception as exc:  # pragma: no cover - transport-level failure reporting
             raise RuntimeError(f"Failed to invoke Ollama chat API: {exc}") from exc
 
-        message = data.get("message")
-        if isinstance(message, dict):
-            content = message.get("content")
-            if isinstance(content, str):
-                return content.strip()
+        message: Dict[str, Any]
+        raw_message = data.get("message")
+        if isinstance(raw_message, dict):
+            message = raw_message
+        else:
+            message = {}
 
-        choices = data.get("choices")
-        if isinstance(choices, list) and choices:
-            choice = choices[0]
-            if isinstance(choice, dict):
-                # OpenAI-compatible shape
-                content = choice.get("message", {}).get("content")
-                if isinstance(content, str):
-                    return content.strip()
+        if not message:
+            choices = data.get("choices")
+            if isinstance(choices, list) and choices:
+                first_choice = choices[0]
+                if isinstance(first_choice, dict):
+                    choice_message = first_choice.get("message")
+                    if isinstance(choice_message, dict):
+                        message = choice_message
 
-        text = data.get("response")
-        if isinstance(text, str):
-            return text.strip()
+        if not message:
+            text = data.get("response")
+            if isinstance(text, str):
+                message = {"role": "assistant", "content": text}
+            else:
+                message = {"role": "assistant", "content": ""}
 
-        raise RuntimeError("Ollama chat response did not include assistant content")
+        if "content" not in message or not isinstance(message.get("content"), str):
+            content_value = message.get("content")
+            if isinstance(content_value, str):
+                message["content"] = content_value
+            elif content_value is None:
+                message["content"] = ""
+            else:
+                message["content"] = str(content_value)
+
+        if "tool_calls" not in message or not isinstance(message.get("tool_calls"), list):
+            message["tool_calls"] = []
+
+        return {"message": message, "raw": data}
 
     @staticmethod
     def _format_model(name: str, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from concurrent.futures import ThreadPoolExecutor
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Callable, TypeVar
@@ -14,12 +14,23 @@ from sqlalchemy.orm import Session, sessionmaker
 from ..models import Base
 
 BASE_DIR = Path(__file__).resolve().parents[3]
-DB_PATH = BASE_DIR / "app.db"
-DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
+
+
+def _resolve_db_path() -> Path:
+    env_path = os.environ.get("APP_DB_PATH")
+    if env_path:
+        candidate = Path(env_path).expanduser().resolve()
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return candidate
+    return BASE_DIR / "app.db"
+
+
+def _database_url() -> str:
+    db_path = _resolve_db_path().as_posix()
+    return f"sqlite:///{db_path}"
 
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
-_executor: ThreadPoolExecutor | None = None
 
 T = TypeVar("T")
 
@@ -27,8 +38,9 @@ T = TypeVar("T")
 def get_engine() -> Engine:
     global _engine, _session_factory
     if _engine is None:
+        database_url = _database_url()
         _engine = create_engine(
-            DATABASE_URL,
+            database_url,
             echo=False,
             future=True,
             connect_args={"check_same_thread": False},
@@ -45,19 +57,9 @@ def get_session_factory() -> sessionmaker[Session]:
     return _session_factory
 
 
-def _get_executor() -> ThreadPoolExecutor:
-    global _executor
-    if _executor is None:
-        _executor = ThreadPoolExecutor(max_workers=8)
-    return _executor
-
-
 async def run_sync(func: Callable[..., T], /, *args, **kwargs) -> T:
     loop = asyncio.get_running_loop()
-    executor = _get_executor()
-    partial = functools.partial(func, *args, **kwargs)
-    future = executor.submit(partial)
-    return await asyncio.wrap_future(future, loop=loop)
+    return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
 
 
 class AsyncSession:
@@ -105,13 +107,6 @@ class AsyncSession:
         return getattr(self._session, item)
 
 
-async def _shutdown_executor() -> None:
-    global _executor
-    if _executor is not None:
-        _executor.shutdown(wait=False)
-        _executor = None
-
-
 @asynccontextmanager
 async def lifespan_context(app):  # type: ignore[unused-argument]
     engine = get_engine()
@@ -120,7 +115,6 @@ async def lifespan_context(app):  # type: ignore[unused-argument]
         yield
     finally:
         await run_sync(engine.dispose)
-        await _shutdown_executor()
 
 
 async def init_db(drop_existing: bool = False) -> None:

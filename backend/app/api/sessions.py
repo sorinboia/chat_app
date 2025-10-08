@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import copy
 import datetime as dt
+import json
+import logging
 import os
 import uuid
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
@@ -37,6 +40,8 @@ from ..services.rag import RAGService, RetrievedChunk
 from ..services.tracing import TraceService
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+logger = logging.getLogger(__name__)
 
 
 def _to_session_summary(session: ChatSession) -> SessionSummary:
@@ -152,9 +157,11 @@ async def run_tool(
     if payload.server_name not in (session.enabled_mcp_servers or []):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MCP server not enabled for this session")
     try:
-        output = mcp_service.execute(payload.server_name, payload.tool_name, payload.arguments)
+        output = await mcp_service.execute(payload.server_name, payload.tool_name, payload.arguments)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - surface unexpected failures
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
     run = await trace_service.start_run(db, session_id=session.id, model_id=session.model_id)
     await trace_service.add_step(
@@ -271,6 +278,7 @@ async def _process_user_turn(
     uploads_dir,
     rag_service: RAGService,
     ollama_service: OllamaService,
+    mcp_service: MCPService,
     trace_service: TraceService,
     edited_from: str | None = None,
 ):
@@ -368,20 +376,195 @@ async def _process_user_turn(
     if not appended_latest:
         llm_messages.append({"role": "user", "content": content})
 
-    llm_request_payload = {
-        "model": chat_session.model_id,
-        "messages": llm_messages,
-    }
-
-    try:
-        assistant_text = await ollama_service.chat(model=chat_session.model_id, messages=llm_messages)
-        trace_output_payload: Dict[str, object] = {"content": assistant_text}
-    except RuntimeError as exc:
-        assistant_text = (
-            "I couldn't reach the model to craft a response right now. "
-            "Please try again in a moment."
+    enabled_servers = chat_session.enabled_mcp_servers or []
+    if enabled_servers:
+        logger.debug(
+            "Session %s has MCP servers enabled: %s", chat_session.id, enabled_servers
         )
-        trace_output_payload = {"error": str(exc)}
+    tools_payload, tool_lookup = await mcp_service.build_tool_definitions(enabled_servers)
+    logger.debug(
+        "Prepared %d MCP tool definitions for session %s",
+        len(tools_payload),
+        chat_session.id,
+    )
+
+    assistant_text = ""
+    tool_iterations = 0
+    max_tool_iterations = 4
+
+    while True:
+        request_snapshot = copy.deepcopy(llm_messages)
+        llm_request_payload: Dict[str, object] = {
+            "model": chat_session.model_id,
+            "messages": request_snapshot,
+        }
+        if tools_payload:
+            llm_request_payload["tools"] = tools_payload
+
+        try:
+            response = await ollama_service.chat(
+                model=chat_session.model_id,
+                messages=request_snapshot,
+                tools=tools_payload if tools_payload else None,
+            )
+        except RuntimeError as exc:
+            assistant_text = (
+                "I couldn't reach the model to craft a response right now. "
+                "Please try again in a moment."
+            )
+            logger.error(
+                "Model invocation failed for session %s: %s",
+                chat_session.id,
+                exc,
+            )
+            await trace_service.add_step(
+                db,
+                run_id=run.id,
+                step_type="model",
+                label="Model call failed",
+                input_payload=llm_request_payload,
+                output_payload={"error": str(exc)},
+            )
+            break
+
+        message_payload = response.get("message") or {}
+        tool_calls = message_payload.get("tool_calls") or []
+        assistant_content = (message_payload.get("content") or "").strip()
+        trace_output_payload: Dict[str, object] = {
+            "message": message_payload,
+            "raw": response.get("raw"),
+        }
+
+        await trace_service.add_step(
+            db,
+            run_id=run.id,
+            step_type="model",
+            label="Assistant tool request" if tool_calls else "Assistant response",
+            input_payload=llm_request_payload,
+            output_payload=trace_output_payload,
+        )
+
+        assistant_entry: Dict[str, Any] = {
+            "role": message_payload.get("role") or "assistant",
+            "content": message_payload.get("content") or "",
+        }
+        if tool_calls:
+            assistant_entry["tool_calls"] = tool_calls
+        llm_messages.append(assistant_entry)
+
+        if tool_calls and tools_payload:
+            tool_iterations += 1
+            if tool_iterations > max_tool_iterations:
+                assistant_text = (
+                    "I ran into a tool loop and had to stop. "
+                    "Please refine your request."
+                )
+                logger.warning(
+                    "Aborting tool loop for session %s after %d iterations",
+                    chat_session.id,
+                    tool_iterations,
+                )
+                break
+
+            for call in tool_calls:
+                function_payload = call.get("function") or {}
+                function_name = function_payload.get("name") or ""
+                raw_arguments = function_payload.get("arguments", {})
+
+                if isinstance(raw_arguments, str):
+                    try:
+                        arguments = json.loads(raw_arguments)
+                    except json.JSONDecodeError:
+                        arguments = {"raw": raw_arguments}
+                elif isinstance(raw_arguments, dict):
+                    arguments = raw_arguments
+                else:
+                    arguments = {"value": raw_arguments}
+
+                tool_info = tool_lookup.get(function_name)
+                if not tool_info and function_name:
+                    try:
+                        server_name, tool_name = mcp_service.decode_tool_name(function_name)
+                        tool_info = {"server_name": server_name, "tool_name": tool_name}
+                    except ValueError:
+                        tool_info = None
+
+                try:
+                    if not tool_info:
+                        raise ValueError(f"Unknown tool '{function_name}'")
+                    logger.info(
+                        "Session %s invoking tool %s with arguments=%s",
+                        chat_session.id,
+                        function_name,
+                        arguments,
+                    )
+                    tool_output = await mcp_service.execute(
+                        tool_info["server_name"],
+                        tool_info["tool_name"],
+                        arguments if isinstance(arguments, dict) else {"value": arguments},
+                    )
+                except Exception as exc:  # pragma: no cover - defensive guard
+                    error_text = f"Tool invocation failed: {exc}"
+                    tool_output = {
+                        "content": [{"type": "text", "text": error_text}],
+                        "isError": True,
+                        "text": error_text,
+                    }
+                    logger.exception(
+                        "Tool execution failed in session %s for %s", chat_session.id, function_name
+                    )
+
+                label = function_name or ""
+                if not label and tool_info:
+                    label = f"{tool_info['server_name']}:{tool_info['tool_name']}"
+                if not label:
+                    label = "mcp"
+
+                await trace_service.add_step(
+                    db,
+                    run_id=run.id,
+                    step_type="mcp",
+                    label=label,
+                    input_payload={
+                        "function": function_name,
+                        "arguments": arguments,
+                    },
+                    output_payload=tool_output,
+                )
+                logger.info(
+                    "Tool %s completed with isError=%s for session %s",
+                    function_name,
+                    tool_output.get("isError"),
+                    chat_session.id,
+                )
+
+                tool_text = tool_output.get("text") or json.dumps(tool_output, ensure_ascii=False)
+                tool_name_value = function_name or ""
+                if not tool_name_value and tool_info:
+                    tool_name_value = f"{tool_info['server_name']}:{tool_info['tool_name']}"
+
+                llm_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_name": tool_name_value,
+                        "content": tool_text,
+                    }
+                )
+
+            continue
+
+        assistant_text = assistant_content or assistant_text
+        break
+
+    if not assistant_text:
+        assistant_text = (
+            "I could not produce a response right now. "
+            "Please try again or adjust your request."
+        )
+        logger.warning(
+            "Assistant produced empty response for session %s; returning fallback text",
+            chat_session.id,
+        )
 
     assistant_message = Message(
         session_id=chat_session.id,
@@ -389,15 +572,6 @@ async def _process_user_turn(
         content=assistant_text,
     )
     db.add(assistant_message)
-
-    await trace_service.add_step(
-        db,
-        run_id=run.id,
-        step_type="model",
-        label="Assistant response",
-        input_payload=llm_request_payload,
-        output_payload=trace_output_payload,
-    )
     await trace_service.finish_run(db, run_id=run.id, status="completed")
     await db.commit()
     await db.refresh(assistant_message)
@@ -419,6 +593,7 @@ async def post_message(
     rag_service = get_rag_service()
     trace_service = get_trace_service()
     ollama_service = get_ollama_service()
+    mcp_service = get_mcp_service()
     assistant_message, run_id = await _process_user_turn(
         chat_session=chat_session,
         content=content,
@@ -429,6 +604,7 @@ async def post_message(
         uploads_dir=uploads_dir,
         rag_service=rag_service,
         ollama_service=ollama_service,
+        mcp_service=mcp_service,
         trace_service=trace_service,
     )
 
@@ -472,6 +648,7 @@ async def edit_message(
     rag_service = get_rag_service()
     trace_service = get_trace_service()
     ollama_service = get_ollama_service()
+    mcp_service = get_mcp_service()
     assistant_message, run_id = await _process_user_turn(
         chat_session=chat_session,
         content=payload.content,
@@ -482,6 +659,7 @@ async def edit_message(
         uploads_dir=uploads_dir,
         rag_service=rag_service,
         ollama_service=ollama_service,
+        mcp_service=mcp_service,
         trace_service=trace_service,
         edited_from=message.id,
     )

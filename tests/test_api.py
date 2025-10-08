@@ -1,15 +1,18 @@
+import os
 from pathlib import Path
+
+TEST_DB_PATH = Path(__file__).resolve().parents[1] / "test_app.db"
+os.environ.setdefault("APP_DB_PATH", str(TEST_DB_PATH))
 
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
 
-DB_PATH = Path(__file__).resolve().parents[1] / "app.db"
-
 
 def setup_module(module):
-    if DB_PATH.exists():
-        DB_PATH.unlink()
+    db_path = Path(os.environ["APP_DB_PATH"])
+    if db_path.exists():
+        db_path.unlink()
 
 
 def test_basic_flow():

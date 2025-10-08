@@ -61,8 +61,12 @@ def get_workspace_root() -> Path:
 @lru_cache(maxsize=1)
 def get_mcp_service() -> MCPService:
     service = get_config_service()
-    config = service.get().mcp
-    return MCPService(config=config, workspace_root=get_workspace_root())
+    config_set = service.get()
+    return MCPService(
+        config=config_set.mcp,
+        workspace_root=get_workspace_root(),
+        api_keys=config_set.secrets.api_keys,
+    )
 
 
 @lru_cache(maxsize=1)
