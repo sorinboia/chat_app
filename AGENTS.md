@@ -7,7 +7,8 @@ User browsermcp MCP in order to test the app that you create.
 Use context7 MCP to get up to date documentation.
 
 You are in charge of testing and running the app.
-You need to perform everything and don't ask the user for any interaction when testing.
+For testing the UI use browsermcp.
+When testing the backend endpoint use curl.
 
 After you have finished an important step or fixed an issue do a git commit.
 

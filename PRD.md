@@ -10,8 +10,9 @@
 **Goals:** Showcase (a) model switching (incl. “thinking” models via Ollama), (b) MCP tool use across transports (stdio / SSE / streamtable HTTP), (c) RAG over local files, and (d) clear, inspectable execution traces.
 
 ## 2) Success Criteria
-- A user can: log in, upload docs, start chats, toggle RAG, pick an LLM and MCP servers per conversation, and view a detailed internal activity page.  
-- While a message send is in-flight, the composer controls (input, send button, model/persona and RAG/streaming toggles) disable and the primary action switches to Cancel, without obscuring the chat workspace; the sidebar and activity drawer remain visible but non-interactive.  
+- A user can: log in, upload docs, start chats, toggle RAG, pick an LLM and MCP servers per conversation, and view a detailed internal activity modal.  
+- When an assistant reply finishes, the UI plays a brief confirmation sound so the user knows the response is ready.  
+- While a message send is in-flight, the composer controls (input, send button, model/persona and RAG/streaming toggles) disable and the primary action switches to Cancel, without obscuring the chat workspace; the sidebar remains visible but non-interactive, and any open internal activity modal shows a disabled state.  
 - The chat composer remains pinned to the bottom of the viewport and the transcript auto-scrolls to new messages.  
 - MCP server management opens in a modal launched from the chat toolbar.  
 - All config is admin-defined JSON under `/config/*.json` and loaded at startup (fail-fast on invalid schema).  
@@ -85,7 +86,7 @@
 - Auth: API keys read from `/config/secrets.json` (mapped by server name).  
 - Transports supported: **stdio**, **SSE**, **streamtable HTTP**.
 
-## 12) Internal Activity Page (Tracing)
+## 12) Internal Activity Modal (Tracing)
 - Scope: only the **signed-in user’s** sessions.  
 - Views:
   - **Run timeline:** per message → list of steps (prompt → retrieval → tools/MCP → model output).  
@@ -94,6 +95,7 @@
   - **Tools/MCP:** call inputs/outputs, status, latency.  
   - **Metrics:** tokens, latency, retry count.  
 - **Important:** No verbatim chain-of-thought is stored or shown; include model-provided **reasoning summaries** when available.
+- **Access:** Launch from the chat header beside the RAG button; opens as a modal that can be dismissed without leaving the chat.
 
 ## 13) Config Files (Loaded at Startup; Fail-Fast)
 All under `/config/`, validated via JSON Schema.
@@ -222,7 +224,7 @@ All under `/config/`, validated via JSON Schema.
 - **Chat header:** model dropdown, persona dropdown, toggle RAG, choose MCP servers, toggle streaming.  
 - **Composer:** pinned to the bottom of the viewport; edit last user message; attach files; send.  
 - **Assistant responses:** when backend responses contain `<think>` blocks, show them as a collapsed "Thoughts" bar that expands to reveal the hidden content on demand.  
-- **Right drawer (Internal Activity):** opens per-turn trace with tabs: Timeline • Prompts • RAG • Tools • Metrics.  
+- **Internal activity modal:** opens per-turn trace with tabs: Timeline • Prompts • RAG • Tools • Metrics.  
 - **Branding:** F5 red (#E21D38) accents, neutral backgrounds; avoid low-contrast tints.
 
 ## 16) Seeding (One-Time Scripts)
@@ -254,5 +256,6 @@ All under `/config/`, validated via JSON Schema.
 4. Enable an MCP server; run a tool call → trace shows inputs/outputs.  
 5. Edit last user message and resend → trace shows new run.  
 6. Rename and delete chats.  
-7. Restart server with invalid `/config/*.json` → startup fails with clear schema errors.  
-8. Branding shows F5 red (#E21D38) accents, readable on white backgrounds.
+7. Hear the confirmation sound when the assistant finishes responding to a newly sent user message.  
+8. Restart server with invalid `/config/*.json` → startup fails with clear schema errors.  
+9. Branding shows F5 red (#E21D38) accents, readable on white backgrounds.
