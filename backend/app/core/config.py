@@ -31,12 +31,12 @@ class ModelsConfig(BaseModel):
 class MCPServerConfig(BaseModel):
     name: constr(strip_whitespace=True, min_length=1)
     transport: constr(strip_whitespace=True, min_length=1)
-    command: Optional[str]
-    args: Optional[List[str]]
-    base_url: Optional[str]
+    command: Optional[str] = None
+    args: Optional[List[str]] = None
+    base_url: Optional[str] = None
     requires_api_key: bool = False
     enabled_by_default: bool = False
-    auth_key_name: Optional[str]
+    auth_key_name: Optional[str] = None
 
     def transport_display(self) -> str:
         return self.transport.replace("_", "-")
