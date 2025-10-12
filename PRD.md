@@ -88,13 +88,14 @@
 
 ## 12) Internal Activity Modal (Tracing)
 - Scope: only the **signed-in user’s** sessions.  
-- Views:
-  - **Run timeline:** per message → list of steps (prompt → retrieval → tools/MCP → model output).  
-  - **Prompts & deltas:** full system+user prompts and assistant output deltas.  
-  - **RAG:** retrieved chunks preview (text, doc name, chunk id).  
-  - **Tools/MCP:** call inputs/outputs, status, latency.  
-  - **Metrics:** tokens, latency, retry count.  
-- **Important:** No verbatim chain-of-thought is stored or shown; include model-provided **reasoning summaries** when available.
+- Primary UX goal: at-a-glance comprehension of the execution flow (Prompt → Retrieval → Tool/MCP → Model) with optional deep dives into the raw payloads.  
+- Layout:
+  - **Run list rail:** status badge, started timestamp, model id; selecting a run loads its detail view.  
+  - **Run summary card:** latency, duration, token counts, model, retry indicator.  
+  - **Flow timeline:** horizontal, iconified sequence that highlights missing/skipped stages.  
+  - **Phase accordions:** grouped sections for Prompt, Retrieval, Tools/MCP, and Model Output. Each accordion shows a human-readable preview (e.g., prompt snippet, chunk count, tool call status) and expands to reveal the full JSON payloads with copy actions.  
+- Additional details: per-step latency bar, transport metadata toggle, retrieved chunk previews, tool/MCP call inputs/outputs, assistant deltas.  
+- **Important:** No verbatim chain-of-thought is stored or shown; include model-provided **reasoning summaries** when available.  
 - **Access:** Launch from the chat header beside the RAG button; opens as a modal that can be dismissed without leaving the chat.
 
 ## 13) Config Files (Loaded at Startup; Fail-Fast)

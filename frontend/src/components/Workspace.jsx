@@ -69,6 +69,167 @@ function getAvatarGlyph(role, user) {
   return 'ℹ️';
 }
 
+const TRACE_PHASES = [
+  {
+    id: 'prompt',
+    label: 'Prompt',
+    icon: '📝',
+    types: ['prompt', 'system'],
+    description: 'Combined system and user inputs sent to the model.'
+  },
+  {
+    id: 'retrieval',
+    label: 'Retrieval',
+    icon: '📚',
+    types: ['rag'],
+    description: 'Context fetching from uploaded documents.'
+  },
+  {
+    id: 'tools',
+    label: 'Tools & MCP',
+    icon: '🛠️',
+    types: ['tool', 'mcp'],
+    description: 'External tool calls and MCP transport activity.'
+  },
+  {
+    id: 'model',
+    label: 'Model Output',
+    icon: '🤖',
+    types: ['model'],
+    description: 'Assistant response and reasoning summary.'
+  }
+];
+
+function getPhaseForStep(step) {
+  const entry = TRACE_PHASES.find((phase) => phase.types.includes(step.type));
+  if (entry) {
+    return entry.id;
+  }
+  return 'other';
+}
+
+function truncateText(value, maxLength = 160) {
+  if (!value) return '';
+  const stringValue = String(value).trim();
+  if (stringValue.length <= maxLength) {
+    return stringValue;
+  }
+  return `${stringValue.slice(0, maxLength)}…`;
+}
+
+function formatDuration(ms) {
+  if (ms == null) return '—';
+  if (ms < 1000) return `${ms} ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = (seconds % 60).toFixed(0).padStart(2, '0');
+  return `${minutes}:${remaining} min`;
+}
+
+function formatTokens(value) {
+  if (value == null) return '—';
+  return value.toLocaleString();
+}
+
+function extractPhasePreview(phaseId, steps) {
+  if (!steps?.length) {
+    return 'No activity recorded.';
+  }
+  const [firstStep] = steps;
+  switch (phaseId) {
+    case 'prompt': {
+      const promptMessages = firstStep?.input_json?.messages || firstStep?.input_json?.prompt;
+      if (Array.isArray(promptMessages)) {
+        const combined = promptMessages
+          .map((message) => message?.content || message?.text || '')
+          .filter(Boolean)
+          .join('\n');
+        if (combined) {
+          return truncateText(combined);
+        }
+      }
+      if (typeof promptMessages === 'string') {
+        return truncateText(promptMessages);
+      }
+      if (firstStep?.label) {
+        return firstStep.label;
+      }
+      break;
+    }
+    case 'retrieval': {
+      const chunkCount = firstStep?.output_json?.chunks?.length;
+      if (chunkCount != null) {
+        return `${chunkCount} chunk${chunkCount === 1 ? '' : 's'} retrieved.`;
+      }
+      if (firstStep?.label) {
+        return firstStep.label;
+      }
+      break;
+    }
+    case 'tools': {
+      const toolName = firstStep?.label || firstStep?.input_json?.tool || firstStep?.input_json?.tool_name;
+      const status = firstStep?.output_json?.status || firstStep?.status;
+      if (toolName) {
+        return status ? `${toolName} (${status})` : toolName;
+      }
+      break;
+    }
+    case 'model': {
+      const content = firstStep?.output_json?.content || firstStep?.output_json?.text;
+      if (Array.isArray(content)) {
+        const joined = content.map((item) => item?.text || '').filter(Boolean).join('\n');
+        if (joined) {
+          return truncateText(joined);
+        }
+      }
+      if (typeof content === 'string') {
+        return truncateText(content);
+      }
+      if (firstStep?.label) {
+        return firstStep.label;
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  if (firstStep?.label) {
+    return firstStep.label;
+  }
+  if (firstStep?.input_json) {
+    return truncateText(JSON.stringify(firstStep.input_json));
+  }
+  if (firstStep?.output_json) {
+    return truncateText(JSON.stringify(firstStep.output_json));
+  }
+  return 'Activity recorded.';
+}
+
+function stepLatencyPercent(stepLatency, maxLatency) {
+  if (!maxLatency || !stepLatency) {
+    return 0;
+  }
+  return Math.max(5, Math.round((stepLatency / maxLatency) * 100));
+}
+
+function getRunStatusStyles(status) {
+  if (!status) {
+    return 'border-slate-300 bg-slate-100 text-slate-600';
+  }
+  const normalized = status.toLowerCase();
+  if (['completed', 'success', 'succeeded'].includes(normalized)) {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  }
+  if (['failed', 'error'].includes(normalized)) {
+    return 'border-rose-200 bg-rose-50 text-rose-700';
+  }
+  if (['running', 'in_progress', 'pending'].includes(normalized)) {
+    return 'border-amber-200 bg-amber-50 text-amber-700';
+  }
+  return 'border-slate-300 bg-slate-100 text-slate-600';
+}
+
 function parseMessageForThoughts(content) {
   if (!content || typeof content !== 'string') {
     return { displayContent: content, thoughts: null };
@@ -139,6 +300,9 @@ export default function Workspace({ user, onLogout }) {
   const [ragModalStatus, setRagModalStatus] = useState(null);
   const [ragDeletingId, setRagDeletingId] = useState(null);
   const [expandedThoughts, setExpandedThoughts] = useState({});
+  const [expandedPhases, setExpandedPhases] = useState({});
+  const [showTransportDetails, setShowTransportDetails] = useState(false);
+  const [copiedPayloadKey, setCopiedPayloadKey] = useState(null);
   const sendAbortControllerRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const previousMessageCountRef = useRef(0);
@@ -286,6 +450,12 @@ export default function Workspace({ user, onLogout }) {
   }, [activeSessionId]);
 
   useEffect(() => {
+    if (!copiedPayloadKey) return undefined;
+    const timeout = setTimeout(() => setCopiedPayloadKey(null), 2000);
+    return () => clearTimeout(timeout);
+  }, [copiedPayloadKey]);
+
+  useEffect(() => {
     if (!isRagModalOpen) return undefined;
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
@@ -306,6 +476,11 @@ export default function Workspace({ user, onLogout }) {
     setRagQueryLoading(false);
     loadRagUploads();
   }, [isRagModalOpen, loadRagUploads]);
+
+  useEffect(() => {
+    setExpandedPhases({});
+    setShowTransportDetails(false);
+  }, [selectedRunDetails?.id]);
 
   const scrollMessagesToBottom = useCallback(
     (behavior = 'auto') => {
@@ -674,6 +849,26 @@ export default function Workspace({ user, onLogout }) {
     setSelectedRunDetails(detail);
   };
 
+  const handleCopyPayload = useCallback(
+    (payload, key) => {
+      if (!payload) return;
+      try {
+        const payloadString = JSON.stringify(payload, null, 2);
+        if (typeof navigator === 'undefined' || !navigator.clipboard) {
+          console.warn('Clipboard API not available.');
+          return;
+        }
+        navigator.clipboard
+          .writeText(payloadString)
+          .then(() => setCopiedPayloadKey(key))
+          .catch((error) => console.error('Failed to copy payload', error));
+      } catch (error) {
+        console.error('Unable to serialise payload for copy', error);
+      }
+    },
+    [setCopiedPayloadKey]
+  );
+
   const toggleThoughtsForMessage = useCallback(
     (messageId) => {
       setExpandedThoughts((prev) => ({
@@ -721,6 +916,79 @@ export default function Workspace({ user, onLogout }) {
     });
     return ids;
   }, [messages]);
+
+  const phaseGroups = useMemo(() => {
+    if (!selectedRunDetails?.steps?.length) {
+      return TRACE_PHASES.map((phase) => ({
+        ...phase,
+        steps: [],
+        preview: 'No activity recorded.'
+      }));
+    }
+    const buckets = new Map();
+    TRACE_PHASES.forEach((phase) => {
+      buckets.set(phase.id, []);
+    });
+    const otherSteps = [];
+    selectedRunDetails.steps.forEach((step) => {
+      const phaseId = getPhaseForStep(step);
+      if (phaseId === 'other') {
+        otherSteps.push(step);
+        return;
+      }
+      buckets.get(phaseId)?.push(step);
+    });
+    const groups = TRACE_PHASES.map((phase) => {
+      const stepsForPhase = buckets.get(phase.id) || [];
+      return {
+        ...phase,
+        steps: stepsForPhase,
+        preview: extractPhasePreview(phase.id, stepsForPhase)
+      };
+    });
+    if (otherSteps.length) {
+      groups.push({
+        id: 'other',
+        label: 'Additional Activity',
+        icon: '🔍',
+        types: [],
+        description: 'Supplementary trace entries not covered by the primary flow.',
+        steps: otherSteps,
+        preview: extractPhasePreview('other', otherSteps)
+      });
+    }
+    return groups;
+  }, [selectedRunDetails]);
+
+  const timelinePhases = useMemo(() => {
+    return phaseGroups.map((phase) => ({
+      id: phase.id,
+      label: phase.label,
+      icon: phase.icon,
+      hasActivity: phase.steps?.length > 0
+    }));
+  }, [phaseGroups]);
+
+  const maxStepLatency = useMemo(() => {
+    if (!selectedRunDetails?.steps?.length) return 0;
+    return selectedRunDetails.steps.reduce((currentMax, step) => {
+      if (!step.latency_ms) return currentMax;
+      return Math.max(currentMax, step.latency_ms);
+    }, 0);
+  }, [selectedRunDetails]);
+
+  const runDurationMs = useMemo(() => {
+    if (!selectedRunDetails) return null;
+    if (selectedRunDetails.latency_ms != null) return selectedRunDetails.latency_ms;
+    if (!selectedRunDetails.finished_at || !selectedRunDetails.started_at) return null;
+    return new Date(selectedRunDetails.finished_at).getTime() - new Date(selectedRunDetails.started_at).getTime();
+  }, [selectedRunDetails]);
+  const runRetryCount = useMemo(() => {
+    if (!selectedRunDetails?.steps) return selectedRunDetails?.retry_count ?? null;
+    const retries = selectedRunDetails.steps.filter((step) => step.type === 'retry').length;
+    if (retries > 0) return retries;
+    return selectedRunDetails?.retry_count ?? null;
+  }, [selectedRunDetails]);
   const visibleMessages = useMemo(
     () => messages.filter((message) => !hiddenMessageIds.has(message.id)),
     [messages, hiddenMessageIds]
@@ -1160,22 +1428,44 @@ export default function Workspace({ user, onLogout }) {
                   </div>
                   {runs.length ? (
                     <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-                      {runs.map((run) => (
-                        <button
-                          key={run.id}
-                          className={classNames(
-                            'w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-left text-sm shadow-sm transition hover:border-brand-primary/40 hover:bg-white',
-                            selectedRun?.id === run.id && 'border-brand-primary/60 bg-brand-primary/10 text-brand-primary'
-                          )}
-                          onClick={() => handleSelectRun(run)}
-                        >
-                          <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
-                            <span>{run.status.toUpperCase()}</span>
-                            <span>{formatDate(run.started_at)}</span>
-                          </div>
-                          <div className="mt-1 text-sm font-semibold text-slate-700">{run.model_id || 'model'}</div>
-                        </button>
-                      ))}
+                      {runs.map((run) => {
+                        const isSelected = selectedRun?.id === run.id;
+                        return (
+                          <button
+                            key={run.id}
+                            className={classNames(
+                              'w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-left text-sm shadow-sm transition hover:border-brand-primary/40 hover:bg-white',
+                              isSelected && 'border-brand-primary/60 bg-brand-primary/10 text-brand-primary'
+                            )}
+                            onClick={() => handleSelectRun(run)}
+                          >
+                            <div className="flex items-center justify-between text-xs uppercase tracking-wide">
+                              <span
+                                className={classNames(
+                                  'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                                  getRunStatusStyles(run.status)
+                                )}
+                              >
+                                {run.status || 'unknown'}
+                              </span>
+                              <span className="text-slate-400">{formatDate(run.started_at)}</span>
+                            </div>
+                            <div className="mt-2 flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold text-slate-700">{run.model_id || 'model'}</div>
+                              {run.latency_ms != null && (
+                                <span className="text-xs font-medium text-slate-500">{formatDuration(run.latency_ms)}</span>
+                              )}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              {run.total_tokens != null && <span>🧮 {formatTokens(run.total_tokens)} tokens</span>}
+                              <span className="inline-flex items-center gap-1 text-slate-400">
+                                <span aria-hidden="true">⛓️</span>
+                                Flow
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-6 text-sm text-slate-500">
@@ -1183,41 +1473,281 @@ export default function Workspace({ user, onLogout }) {
                     </div>
                   )}
                 </div>
-                <div className="flex min-h-[280px] flex-col rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-inner">
+                <div className="flex min-h-[320px] flex-col rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-inner">
                   {selectedRunDetails ? (
-                    <div className="flex h-full flex-col space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Model</div>
-                          <div className="text-sm font-semibold text-slate-700">{selectedRunModelId}</div>
+                    <div className="flex h-full flex-col space-y-6">
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                            Run summary
+                          </div>
+                          <div className="mt-3 space-y-2 text-sm text-slate-600">
+                            <div className="flex items-center justify-between">
+                              <span>Status</span>
+                              <span
+                                className={classNames(
+                                  'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide',
+                                  getRunStatusStyles(selectedRunDetails.status)
+                                )}
+                              >
+                                {selectedRunDetails.status || 'unknown'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Model</span>
+                              <span className="font-semibold text-slate-700">{selectedRunModelId}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Started</span>
+                              <span>{selectedRunStartedAt ? formatDate(selectedRunStartedAt) : '—'}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Duration</span>
+                              <span>{formatDuration(runDurationMs)}</span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Started</div>
-                          <div>{selectedRunStartedAt ? formatDate(selectedRunStartedAt) : '—'}</div>
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                            Tokens
+                          </div>
+                          <div className="mt-3 space-y-2 text-sm text-slate-600">
+                            <div className="flex items-center justify-between">
+                              <span>Total</span>
+                              <span className="font-semibold text-slate-700">{formatTokens(selectedRunDetails.total_tokens)}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Prompt</span>
+                              <span>{formatTokens(selectedRunDetails.prompt_tokens)}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Completion</span>
+                              <span>{formatTokens(selectedRunDetails.completion_tokens)}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                          <div className="flex items-center justify-between">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                              Details
+                            </div>
+                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 accent-brand-primary"
+                                checked={showTransportDetails}
+                                onChange={(event) => setShowTransportDetails(event.target.checked)}
+                              />
+                              Transport metadata
+                            </label>
+                          </div>
+                          <div className="mt-3 space-y-2 text-sm text-slate-600">
+                            <div className="flex items-center justify-between">
+                              <span>Finished</span>
+                              <span>
+                                {selectedRunDetails.finished_at
+                                  ? formatDate(selectedRunDetails.finished_at)
+                                  : '—'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Latency</span>
+                              <span>{selectedRunDetails.latency_ms != null ? `${selectedRunDetails.latency_ms} ms` : '—'}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Retries</span>
+                              <span>{runRetryCount != null ? runRetryCount : '—'}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-                        {selectedRunDetails.steps.map((step) => (
-                          <div key={step.id} className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                                {step.type}
-                              </span>
-                              <span>{formatDate(step.ts)}</span>
+
+                      <div>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Execution flow</h3>
+                          <p className="text-xs text-slate-500">Spot the stages involved in this response.</p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                          {timelinePhases.map((phase, index) => (
+                            <div key={phase.id} className="flex items-center gap-3">
+                              <div
+                                className={classNames(
+                                  'flex min-w-[120px] flex-col items-center rounded-2xl border px-3 py-2 text-center text-xs font-semibold transition',
+                                  phase.hasActivity
+                                    ? 'border-brand-primary/40 bg-brand-primary/10 text-brand-primary'
+                                    : 'border-slate-200 bg-white text-slate-400'
+                                )}
+                              >
+                                <span className="text-lg" aria-hidden="true">
+                                  {phase.icon}
+                                </span>
+                                <span className="mt-1 text-[11px] uppercase tracking-wide">{phase.label}</span>
+                                <span className="mt-1 text-[10px] font-medium">
+                                  {phase.hasActivity ? 'Included' : 'Skipped'}
+                                </span>
+                              </div>
+                              {index < timelinePhases.length - 1 && (
+                                <span className="hidden text-slate-300 sm:inline" aria-hidden="true">
+                                  ─────
+                                </span>
+                              )}
                             </div>
-                            {step.label && <div className="mt-2 text-sm font-semibold text-slate-700">{step.label}</div>}
-                            {step.input_json && (
-                              <pre className="mt-2 max-h-[24rem] overflow-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono text-slate-600 whitespace-pre-wrap break-words">
-                                {JSON.stringify(step.input_json, null, 2)}
-                              </pre>
-                            )}
-                            {step.output_json && (
-                              <pre className="mt-2 max-h-[24rem] overflow-auto rounded-xl border border-slate-200 bg-slate-900/90 px-3 py-2 text-xs font-mono text-white/80 whitespace-pre-wrap break-words">
-                                {JSON.stringify(step.output_json, null, 2)}
-                              </pre>
-                            )}
-                          </div>
-                        ))}
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+                        {phaseGroups.map((phase) => {
+                          const isExpanded = expandedPhases[phase.id] ?? phase.steps.length > 0;
+                          return (
+                            <div key={phase.id} className="rounded-2xl border border-slate-200 bg-white/80 shadow-sm">
+                              <button
+                                className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-white"
+                                onClick={() =>
+                                  setExpandedPhases((prev) => ({
+                                    ...prev,
+                                    [phase.id]: !isExpanded
+                                  }))
+                                }
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xl" aria-hidden="true">
+                                    {phase.icon}
+                                  </span>
+                                  <div>
+                                    <div className="text-sm font-semibold text-slate-700">{phase.label}</div>
+                                    <div className="text-xs text-slate-500">{phase.preview}</div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs text-slate-500">
+                                  <span>{phase.steps.length ? `${phase.steps.length} step${phase.steps.length === 1 ? '' : 's'}` : 'No activity'}</span>
+                                  <span aria-hidden="true" className="text-base">
+                                    {isExpanded ? '▴' : '▾'}
+                                  </span>
+                                </div>
+                              </button>
+                              {isExpanded && (
+                                <div className="space-y-3 border-t border-slate-200 px-4 py-4">
+                                  {phase.steps.length ? (
+                                    phase.steps.map((step) => {
+                                      const latencyWidth = stepLatencyPercent(step.latency_ms, maxStepLatency);
+                                      const metadataEntries = [];
+                                      if (showTransportDetails) {
+                                        const transportValue = step?.input_json?.transport || step?.output_json?.transport;
+                                        const serverValue =
+                                          step?.input_json?.server_name ||
+                                          step?.input_json?.server ||
+                                          step?.input_json?.server_id ||
+                                          step?.output_json?.server_name;
+                                        const urlValue =
+                                          step?.input_json?.base_url ||
+                                          step?.output_json?.base_url ||
+                                          step?.input_json?.endpoint;
+                                        if (transportValue) {
+                                          metadataEntries.push({ label: 'Transport', value: transportValue });
+                                        }
+                                        if (serverValue) {
+                                          metadataEntries.push({ label: 'Server', value: serverValue });
+                                        }
+                                        if (urlValue) {
+                                          metadataEntries.push({ label: 'URL', value: urlValue });
+                                        }
+                                      }
+                                      return (
+                                        <div key={step.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-inner">
+                                          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+                                            <div className="inline-flex items-center gap-2">
+                                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                                {step.type}
+                                              </span>
+                                              {step.label && <span className="font-medium text-slate-600">{step.label}</span>}
+                                            </div>
+                                            <span>{formatDate(step.ts)}</span>
+                                          </div>
+                                          {step.latency_ms != null && (
+                                            <div className="mt-3 text-xs text-slate-500">
+                                              <div className="flex items-center justify-between">
+                                                <span>Latency</span>
+                                                <span>{step.latency_ms} ms</span>
+                                              </div>
+                                              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                                                <div
+                                                  className="h-full rounded-full bg-brand-primary/80"
+                                                  style={{ width: `${latencyWidth}%` }}
+                                                />
+                                              </div>
+                                            </div>
+                                          )}
+                                          {metadataEntries.length > 0 && (
+                                            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-slate-500">
+                                              {metadataEntries.map((entry) => (
+                                                <span
+                                                  key={`${step.id}-${entry.label}`}
+                                                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600"
+                                                >
+                                                  <span className="text-[9px] uppercase tracking-wide text-slate-400">{entry.label}</span>
+                                                  <span className="font-semibold text-slate-600">{entry.value}</span>
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                          <div className="mt-3 space-y-3">
+                                            {step.input_json && (
+                                              <details className="group rounded-xl border border-slate-200 bg-slate-50">
+                                                <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-slate-600 transition group-open:bg-slate-100">
+                                                  <span>Input payload</span>
+                                                  <button
+                                                    className="rounded-full border border-slate-300 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 transition hover:border-brand-primary hover:text-brand-primary"
+                                                    type="button"
+                                                    onClick={(event) => {
+                                                      event.preventDefault();
+                                                      event.stopPropagation();
+                                                      handleCopyPayload(step.input_json, `${step.id}-input`);
+                                                    }}
+                                                  >
+                                                    {copiedPayloadKey === `${step.id}-input` ? 'Copied' : 'Copy'}
+                                                  </button>
+                                                </summary>
+                                                <pre className="max-h-64 overflow-auto px-3 py-3 font-mono text-xs text-slate-700 whitespace-pre-wrap break-words">
+                                                  {JSON.stringify(step.input_json, null, 2)}
+                                                </pre>
+                                              </details>
+                                            )}
+                                            {step.output_json && (
+                                              <details className="group rounded-xl border border-slate-200 bg-slate-900/95 text-white/80">
+                                                <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-white/80 transition group-open:bg-slate-800/90">
+                                                  <span>Output payload</span>
+                                                  <button
+                                                    className="rounded-full border border-white/40 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/70 transition hover:border-brand-primary/80 hover:text-white"
+                                                    type="button"
+                                                    onClick={(event) => {
+                                                      event.preventDefault();
+                                                      event.stopPropagation();
+                                                      handleCopyPayload(step.output_json, `${step.id}-output`);
+                                                    }}
+                                                  >
+                                                    {copiedPayloadKey === `${step.id}-output` ? 'Copied' : 'Copy'}
+                                                  </button>
+                                                </summary>
+                                                <pre className="max-h-64 overflow-auto px-3 py-3 font-mono text-xs text-white/90 whitespace-pre-wrap break-words">
+                                                  {JSON.stringify(step.output_json, null, 2)}
+                                                </pre>
+                                              </details>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="rounded-xl border border-dashed border-slate-200 bg-white/80 px-4 py-6 text-sm text-slate-500">
+                                      No recorded steps for this phase.
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   ) : (
