@@ -11,6 +11,7 @@ services:
       - ./app.db:/app/app.db
     environment:
       - PYTHONUNBUFFERED=1
+      - APP_CONFIG_DIR=config/container
 
   frontend:
     build: ./frontend

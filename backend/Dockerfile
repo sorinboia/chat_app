@@ -9,5 +9,6 @@ COPY backend ./backend
 COPY config ./config
 
 ENV PYTHONPATH=/app
+ENV APP_CONFIG_DIR=config/container
 
 CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

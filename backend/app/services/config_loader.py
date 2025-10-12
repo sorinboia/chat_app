@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -61,5 +62,13 @@ class ConfigState(BaseModel):
 
 
 def create_config_service() -> ConfigService:
-    config_dir = Path(__file__).resolve().parents[3] / "config"
+    base_dir = Path(__file__).resolve().parents[3]
+    config_dir_env = os.getenv("APP_CONFIG_DIR")
+    if config_dir_env:
+        candidate = Path(config_dir_env)
+        if not candidate.is_absolute():
+            candidate = (base_dir / candidate).resolve()
+        config_dir = candidate
+    else:
+        config_dir = base_dir / "config"
     return ConfigService(config_dir=config_dir)
