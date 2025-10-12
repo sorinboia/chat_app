@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, ValidationError, constr
+from urllib.parse import urlparse, urlunparse
 
 
 class OllamaConfig(BaseModel):
@@ -147,10 +149,46 @@ def _read_json(path: Path) -> dict:
         raise ConfigLoaderError(f"Invalid JSON in {path}: {exc}") from exc
 
 
+def _apply_env_overrides(models: ModelsConfig) -> None:
+    """Apply environment variable overrides to the models configuration."""
+    base_url_override = os.getenv("OLLAMA_BASE_URL")
+    if base_url_override:
+        models.ollama.base_url = base_url_override
+        return
+
+    ip_override = os.getenv("OLLAMA_IP")
+    if not ip_override:
+        return
+
+    parsed = urlparse(models.ollama.base_url)
+    scheme = parsed.scheme or "http"
+    base_host = ip_override.strip()
+
+    # If the override already includes a port, use it as-is; otherwise preserve the original port.
+    if ":" in base_host:
+        netloc = base_host
+    else:
+        port = parsed.port
+        netloc = f"{base_host}:{port}" if port else base_host
+
+    rebuilt = urlunparse(
+        (
+            scheme,
+            netloc,
+            parsed.path or "",
+            parsed.params or "",
+            parsed.query or "",
+            parsed.fragment or "",
+        )
+    )
+    models.ollama.base_url = rebuilt
+
+
 def load_config_set(config_dir: Path) -> ConfigSet:
     """Load all required configuration files from the provided directory."""
     try:
         models = ModelsConfig(**_read_json(config_dir / "models.json"))
+        _apply_env_overrides(models)
         mcp = MCPConfig(**_read_json(config_dir / "mcp.json"))
         rag = RagConfig(**_read_json(config_dir / "rag.json"))
         personas = PersonasConfig(**_read_json(config_dir / "personas.json"))

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .api import auth, config as config_router, models as models_router, rag as rag_router, sessions, traces
 from .core.database import lifespan_context
@@ -31,6 +33,10 @@ app.include_router(models_router.router)
 app.include_router(rag_router.router)
 app.include_router(sessions.router)
 app.include_router(traces.router)
+
+_frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="frontend")
 
 
 @app.on_event("startup")
