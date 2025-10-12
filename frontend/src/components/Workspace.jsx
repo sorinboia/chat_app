@@ -961,12 +961,14 @@ export default function Workspace({ user, onLogout }) {
   }, [selectedRunDetails]);
 
   const timelinePhases = useMemo(() => {
-    return phaseGroups.map((phase) => ({
-      id: phase.id,
-      label: phase.label,
-      icon: phase.icon,
-      hasActivity: phase.steps?.length > 0
-    }));
+    return phaseGroups
+      .filter((phase) => phase.steps?.length > 0)
+      .map((phase) => ({
+        id: phase.id,
+        label: phase.label,
+        icon: phase.icon,
+        hasActivity: true
+      }));
   }, [phaseGroups]);
 
   const maxStepLatency = useMemo(() => {
@@ -1390,7 +1392,7 @@ export default function Workspace({ user, onLogout }) {
           onClick={handleCloseActivityModal}
         >
           <div
-            className="glass-card flex h-full max-h-[calc(100vh-4rem)] min-h-[24rem] w-full max-w-6xl flex-col border border-white/60 bg-white/95 text-slate-900 shadow-2xl"
+            className="glass-card flex h-full max-h-[calc(100vh-4rem)] min-h-[24rem] w-full max-w-[calc(100vw-3rem)] flex-col border border-white/60 bg-white/95 text-slate-900 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="activity-modal-title"
