@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+import httpx
+
 from ..core.config import MCPConfig, MCPServerConfig
 
 _JSONRPC_VERSION = "2.0"
@@ -44,6 +46,8 @@ class MCPService:
             if server_name == "filesystem-tools":
                 return self._filesystem_tool_catalog()
             return await self._list_stdio_tools(server)
+        if server.transport == "streamtable_http":
+            return await self._list_streamtable_http_tools(server)
         raise ValueError(f"Transport '{server.transport}' not implemented for listing tools")
 
     async def build_tool_definitions(
@@ -111,6 +115,8 @@ class MCPService:
             if server_name == "filesystem-tools":
                 return self._handle_filesystem_tool(tool_name, arguments)
             return await self._call_stdio_tool(server, tool_name, arguments)
+        if server.transport == "streamtable_http":
+            return await self._call_streamtable_http_tool(server, tool_name, arguments)
 
         raise ValueError(f"Transport '{server.transport}' not implemented for tool execution")
 
@@ -131,6 +137,30 @@ class MCPService:
             )
             return tools
 
+    async def _list_streamtable_http_tools(self, server: MCPServerConfig) -> List[Dict[str, Any]]:
+        api_key = self._resolve_api_key(server)
+        async with _StreamtableHTTPSession(
+            server=server,
+            api_key=api_key,
+            protocol_version=_DEFAULT_PROTOCOL_VERSION,
+        ) as session:
+            tools: List[Dict[str, Any]] = []
+            cursor: Optional[str] = None
+            while True:
+                params = {"cursor": cursor} if cursor else None
+                response = await session.request("tools/list", params=params)
+                result = response.get("result", {}) if isinstance(response, dict) else {}
+                tools.extend(result.get("tools", []) or [])
+                cursor = result.get("nextCursor")
+                if not cursor:
+                    break
+            logger.debug(
+                "Listed %d tools for MCP streamtable_http server '%s'",
+                len(tools),
+                server.name,
+            )
+            return tools
+
     async def _call_stdio_tool(
         self,
         server: MCPServerConfig,
@@ -138,6 +168,32 @@ class MCPService:
         arguments: Dict[str, Any],
     ) -> Dict[str, Any]:
         async with _StdioSession(server, self.workspace_root, self._build_env(server)) as session:
+            response = await session.request(
+                "tools/call",
+                params={"name": tool_name, "arguments": arguments},
+            )
+            result = response.get("result", {}) if isinstance(response, dict) else {}
+            formatted = self._format_tool_result(result)
+            logger.info(
+                "MCP tool %s.%s returned isError=%s",
+                server.name,
+                tool_name,
+                formatted.get("isError"),
+            )
+            return formatted
+
+    async def _call_streamtable_http_tool(
+        self,
+        server: MCPServerConfig,
+        tool_name: str,
+        arguments: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        api_key = self._resolve_api_key(server)
+        async with _StreamtableHTTPSession(
+            server=server,
+            api_key=api_key,
+            protocol_version=_DEFAULT_PROTOCOL_VERSION,
+        ) as session:
             response = await session.request(
                 "tools/call",
                 params={"name": tool_name, "arguments": arguments},
@@ -255,14 +311,23 @@ class MCPService:
 
         return payload
 
+    def _resolve_api_key(self, server: MCPServerConfig) -> Optional[Tuple[str, str]]:
+        if not server.requires_api_key:
+            return None
+        key_name = server.auth_key_name or server.name.upper() + "_API_KEY"
+        key_value = self.api_keys.get(key_name)
+        if not key_value:
+            raise ValueError(
+                f"Missing API key for MCP server '{server.name}' (expected '{key_name}')"
+            )
+        return key_name, key_value
+
     def _build_env(self, server: MCPServerConfig) -> Dict[str, str]:
         env = os.environ.copy()
         injected: List[str] = []
-        if server.requires_api_key:
-            key_name = server.auth_key_name or server.name.upper() + "_API_KEY"
-            key_value = self.api_keys.get(key_name)
-            if not key_value:
-                raise ValueError(f"Missing API key for MCP server '{server.name}' (expected '{key_name}')")
+        resolved = self._resolve_api_key(server)
+        if resolved:
+            key_name, key_value = resolved
             env[key_name] = key_value
             injected.append(key_name)
         logger.debug(
@@ -399,6 +464,272 @@ class _StdioSession:
             if message.get("id") == target_id:
                 return message
             # Ignore unrelated notifications/log messages.
+
+    def _next_request_id(self) -> int:
+        self._next_id += 1
+        return self._next_id
+
+
+@dataclass
+class _StreamtableHTTPSession:
+    server: MCPServerConfig
+    api_key: Optional[Tuple[str, str]]
+    protocol_version: str
+    request_timeout: float = 60.0
+
+    def __post_init__(self) -> None:
+        self._client: httpx.AsyncClient | None = None
+        self._session_id: Optional[str] = None
+        self._next_id = 0
+        self._endpoint = self.server.base_url
+        self._default_headers: Dict[str, str] = {}
+
+    async def __aenter__(self) -> "_StreamtableHTTPSession":
+        if not self._endpoint:
+            raise ValueError(
+                f"MCP server '{self.server.name}' is missing a base_url for streamtable_http transport"
+            )
+        timeout = httpx.Timeout(self.request_timeout, connect=10.0)
+        self._client = httpx.AsyncClient(timeout=timeout)
+        self._default_headers = self._build_default_headers()
+        await self._initialize()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
+        try:
+            await self._shutdown()
+        finally:
+            if self._client:
+                await self._client.aclose()
+                self._client = None
+
+    async def request(self, method: str, params: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "jsonrpc": _JSONRPC_VERSION,
+            "id": self._next_request_id(),
+            "method": method,
+        }
+        if params is not None:
+            payload["params"] = params
+        response = await self._send_message(payload, expect_response=True)
+        return response or {}
+
+    async def notify(self, method: str, params: Dict[str, Any] | None = None) -> None:
+        payload: Dict[str, Any] = {
+            "jsonrpc": _JSONRPC_VERSION,
+            "method": method,
+        }
+        if params is not None:
+            payload["params"] = params
+        await self._send_message(payload, expect_response=False)
+
+    async def _initialize(self) -> None:
+        response = await self._send_message(
+            {
+                "jsonrpc": _JSONRPC_VERSION,
+                "id": self._next_request_id(),
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": self.protocol_version,
+                    "capabilities": {"tools": {"listChanged": True}},
+                    "clientInfo": {"name": "chat-app-backend", "version": "1.0"},
+                },
+            },
+            expect_response=True,
+            include_session=False,
+        )
+        if not isinstance(response, dict):
+            raise RuntimeError(
+                f"Invalid initialize response from MCP server '{self.server.name}': {response!r}"
+            )
+        if "error" in response:
+            raise RuntimeError(
+                f"Failed to initialize MCP server '{self.server.name}': {response['error']}"
+            )
+        result = response.get("result") if isinstance(response, dict) else None
+        negotiated = result.get("protocolVersion") if isinstance(result, dict) else None
+        if isinstance(negotiated, str):
+            self.protocol_version = negotiated
+            self._default_headers["MCP-Protocol-Version"] = negotiated
+        await self.notify("notifications/initialized")
+
+    async def _shutdown(self) -> None:
+        if not self._client:
+            return
+        try:
+            await self._send_message(
+                {
+                    "jsonrpc": _JSONRPC_VERSION,
+                    "id": self._next_request_id(),
+                    "method": "shutdown",
+                },
+                expect_response=True,
+            )
+        except Exception:
+            logger.debug("Failed to send shutdown to MCP server '%s'", self.server.name, exc_info=True)
+        if self._session_id:
+            try:
+                headers = self._compose_headers(include_session=True, content_type=False)
+                await self._client.delete(self._endpoint, headers=headers)
+            except Exception:
+                logger.debug(
+                    "Failed to send DELETE shutdown signal to MCP server '%s'",
+                    self.server.name,
+                    exc_info=True,
+                )
+
+    async def _send_message(
+        self,
+        payload: Dict[str, Any],
+        *,
+        expect_response: bool,
+        include_session: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        if not self._client:
+            raise RuntimeError("MCP streamtable HTTP session is not initialized")
+        headers = self._compose_headers(include_session=include_session)
+        if expect_response:
+            async with self._client.stream(
+                "POST",
+                self._endpoint,
+                headers=headers,
+                json=payload,
+            ) as response:
+                await self._ensure_success(response)
+                self._capture_session_id(response)
+                parsed = await self._parse_response(response, payload.get("id"))
+                return parsed
+        response = await self._client.post(
+            self._endpoint,
+            headers=headers,
+            json=payload,
+        )
+        self._capture_session_id(response)
+        if response.status_code not in (202, 204):
+            detail = response.text.strip()
+            raise RuntimeError(
+                f"MCP HTTP notification failed for server '{self.server.name}' "
+                f"(status={response.status_code}, detail={detail or 'no body'})"
+            )
+        return None
+
+    async def _ensure_success(self, response: httpx.Response) -> None:
+        if response.status_code < 400:
+            return
+        body_bytes = await response.aread()
+        encoding = response.encoding or "utf-8"
+        body_text = body_bytes.decode(encoding, errors="ignore") if body_bytes else ""
+        raise RuntimeError(
+            f"MCP HTTP request failed for server '{self.server.name}' "
+            f"(status={response.status_code}, detail={body_text or 'no body'})"
+        )
+
+    async def _parse_response(
+        self, response: httpx.Response, target_id: Optional[int]
+    ) -> Dict[str, Any]:
+        content_type = response.headers.get("content-type", "")
+        if "text/event-stream" in content_type:
+            return await self._consume_sse(response, target_id)
+        raw = await response.aread()
+        if not raw:
+            return {}
+        encoding = response.encoding or "utf-8"
+        text = raw.decode(encoding, errors="ignore")
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Invalid JSON response from MCP server '{self.server.name}': {text}"
+            ) from exc
+
+    async def _consume_sse(
+        self,
+        response: httpx.Response,
+        target_id: Optional[int],
+    ) -> Dict[str, Any]:
+        data_lines: List[str] = []
+        async for line in response.aiter_lines():
+            if line is None:
+                continue
+            stripped = line.strip("\n")
+            if not stripped:
+                if not data_lines:
+                    continue
+                payload = "\n".join(data_lines)
+                data_lines.clear()
+                try:
+                    message = json.loads(payload)
+                except json.JSONDecodeError:
+                    logger.debug(
+                        "Ignoring non-JSON SSE message from MCP server '%s': %s",
+                        self.server.name,
+                        payload,
+                    )
+                    continue
+                if target_id is None or message.get("id") == target_id or "result" in message or "error" in message:
+                    if target_id is not None and message.get("id") != target_id and "result" not in message and "error" not in message:
+                        logger.debug(
+                            "Skipping SSE message without matching id for server '%s': %s",
+                            self.server.name,
+                            message,
+                        )
+                        continue
+                    return message
+                logger.debug(
+                    "Ignoring out-of-band SSE message from MCP server '%s': %s",
+                    self.server.name,
+                    message,
+                )
+                continue
+            if stripped.startswith(":"):
+                continue
+            if stripped.startswith("data:"):
+                data_lines.append(stripped[5:].lstrip())
+                continue
+            # Ignore other SSE fields (id, event, retry) for now.
+        if data_lines:
+            payload = "\n".join(data_lines)
+            try:
+                message = json.loads(payload)
+                return message
+            except json.JSONDecodeError:
+                pass
+        raise RuntimeError(
+            f"Did not receive response for request {target_id!r} from MCP server '{self.server.name}'"
+        )
+
+    def _compose_headers(self, *, include_session: bool, content_type: bool = True) -> Dict[str, str]:
+        headers = dict(self._default_headers)
+        if content_type:
+            headers["Content-Type"] = "application/json"
+        if include_session and self._session_id:
+            headers["Mcp-Session-Id"] = self._session_id
+        return headers
+
+    def _capture_session_id(self, response: httpx.Response) -> None:
+        if self._session_id:
+            return
+        session_id = response.headers.get("mcp-session-id")
+        if session_id:
+            self._session_id = session_id
+
+    def _build_default_headers(self) -> Dict[str, str]:
+        headers: Dict[str, str] = {
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": self.protocol_version,
+        }
+        if self.api_key:
+            key_name, key_value = self.api_key
+            key_value_str = str(key_value)
+            if key_value_str.lower().startswith("bearer "):
+                headers["Authorization"] = key_value_str
+            else:
+                headers["Authorization"] = f"Bearer {key_value_str}"
+            headers["X-API-Key"] = key_value_str
+            headers[key_name] = key_value_str
+            normalized = "-".join(part.capitalize() for part in key_name.split("_"))
+            headers[normalized] = key_value_str
+        return headers
 
     def _next_request_id(self) -> int:
         self._next_id += 1
