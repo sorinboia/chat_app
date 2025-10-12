@@ -178,6 +178,51 @@ function getModelResponsePreview(output) {
   }
 }
 
+function getMessageStats(payload) {
+  const result = {
+    system: 0,
+    user: 0,
+    assistant: 0,
+    tool: 0,
+    other: 0
+  };
+  if (!payload) {
+    return result;
+  }
+  const messages =
+    payload?.messages ||
+    payload?.input?.messages ||
+    (Array.isArray(payload?.prompt) ? payload.prompt : null) ||
+    (Array.isArray(payload) ? payload : null);
+  if (!Array.isArray(messages)) {
+    return result;
+  }
+  messages.forEach((message) => {
+    const role = (message?.role || message?.type || '').toLowerCase();
+    switch (role) {
+      case 'system':
+        result.system += 1;
+        break;
+      case 'user':
+      case 'human':
+        result.user += 1;
+        break;
+      case 'assistant':
+      case 'ai':
+        result.assistant += 1;
+        break;
+      case 'tool':
+      case 'function':
+        result.tool += 1;
+        break;
+      default:
+        result.other += 1;
+        break;
+    }
+  });
+  return result;
+}
+
 function formatDuration(ms) {
   if (ms == null) return '—';
   if (ms < 1000) return `${ms} ms`;
@@ -975,184 +1020,277 @@ export default function Workspace({ user, onLogout }) {
     if (!selectedRunDetails?.steps?.length) {
       return [];
     }
-    const steps = [...selectedRunDetails.steps].sort((a, b) => {
+    const sortedSteps = [...selectedRunDetails.steps].sort((a, b) => {
       const aTime = a?.ts ? new Date(a.ts).getTime() : 0;
       const bTime = b?.ts ? new Date(b.ts).getTime() : 0;
       return aTime - bTime;
     });
-    const promptSteps = steps.filter((step) => step.type === 'prompt' || step.type === 'system');
-    const retrievalSteps = steps.filter((step) => step.type === 'rag');
-    const toolSteps = steps.filter((step) => step.type === 'tool' || step.type === 'mcp');
-    const modelSteps = steps.filter((step) => step.type === 'model');
     const entries = [];
+    const executedTools = [];
 
-    if (promptSteps.length) {
+    const pushEntry = (entry) => {
+      const summary = entry.summary && entry.summary.trim().length > 0 ? entry.summary : null;
       entries.push({
-        id: 'prompt',
-        icon: '📝',
-        title: 'User Prompt',
-        summary: extractPhasePreview('prompt', promptSteps),
-        timestamp: promptSteps[0]?.ts || null,
-        steps: promptSteps,
-        payloadVisibility: 'input',
-        defaultExpanded: true
+        ...entry,
+        summary: summary || 'Details available below.'
       });
-    }
+    };
 
-    if (retrievalSteps.length) {
-      const totalChunks = retrievalSteps.reduce((total, step) => {
-        const chunkCount = Array.isArray(step?.output_json?.chunks) ? step.output_json.chunks.length : 0;
-        return total + chunkCount;
-      }, 0);
-      entries.push({
-        id: 'retrieval',
-        icon: '📚',
-        title: 'Retrieved Context',
-        summary:
-          totalChunks > 0
-            ? `${totalChunks} chunk${totalChunks === 1 ? '' : 's'} forwarded to the model.`
-            : extractPhasePreview('retrieval', retrievalSteps),
-        timestamp: retrievalSteps[0]?.ts || null,
-        steps: retrievalSteps,
-        payloadVisibility: 'output',
-        quickMeta: totalChunks
-          ? [
-              {
-                label: 'Chunks',
-                value: String(totalChunks)
-              }
-            ]
-          : [],
-        defaultExpanded: retrievalSteps.length > 0
-      });
-    }
+    sortedSteps.forEach((step, index) => {
+      const timestamp = step?.ts || null;
+      const base = {
+        timestamp,
+        steps: [step]
+      };
 
-    toolSteps.forEach((step) => {
-      const toolName =
-        step?.label ||
-        step?.input_json?.tool ||
-        step?.input_json?.tool_name ||
-        step?.output_json?.tool ||
-        step?.output_json?.name;
-      const serverName =
-        step?.input_json?.server_name || step?.input_json?.server || step?.input_json?.server_id || step?.output_json?.server;
-      const baseTitle =
-        step.type === 'mcp'
-          ? toolName
-            ? `MCP • ${toolName}`
-            : serverName
-            ? `MCP • ${serverName}`
-            : 'MCP call'
-          : toolName
-          ? `Tool • ${toolName}`
-          : 'Tool call';
-      const status =
-        step?.output_json?.status || step?.output_json?.state || (step?.output_json?.error ? 'error' : undefined);
-      const outputSummary = (() => {
-        if (step?.output_json?.error) {
-          return truncateText(step.output_json.error);
-        }
-        const result = step?.output_json?.result ?? step?.output_json?.data ?? step?.output_json?.output;
-        if (result != null) {
-          if (typeof result === 'string') {
-            return truncateText(result);
+      if (step.type === 'system') {
+        const systemText =
+          coerceContentToText(
+            step?.input_json?.content ??
+              step?.input_json?.text ??
+              step?.input_json?.prompt ??
+              (Array.isArray(step?.input_json?.messages) ? step.input_json.messages : step.input_json)
+          ) || step.label;
+        pushEntry({
+          ...base,
+          id: `${step.id}-system`,
+          icon: '🧭',
+          title: 'System Prompt',
+          summary: systemText ? truncateText(systemText) : 'System context applied.',
+          payloadVisibility: step.input_json ? 'input' : step.output_json ? 'output' : null,
+          defaultExpanded: index === 0
+        });
+        return;
+      }
+
+      if (step.type === 'prompt') {
+        pushEntry({
+          ...base,
+          id: `${step.id}-prompt`,
+          icon: '📝',
+          title: 'User Prompt',
+          summary: extractPhasePreview('prompt', [step]),
+          payloadVisibility: step.input_json ? 'input' : step.output_json ? 'output' : null,
+          defaultExpanded: entries.length === 0
+        });
+        return;
+      }
+
+      if (step.type === 'rag') {
+        const chunkCount = Array.isArray(step?.output_json?.chunks) ? step.output_json.chunks.length : null;
+        pushEntry({
+          ...base,
+          id: `${step.id}-retrieval`,
+          icon: '📚',
+          title: 'Retrieved Context',
+          summary:
+            chunkCount != null
+              ? `${chunkCount} chunk${chunkCount === 1 ? '' : 's'} forwarded to the model.`
+              : extractPhasePreview('retrieval', [step]),
+          payloadVisibility: 'output',
+          quickMeta:
+            chunkCount != null
+              ? [
+                  {
+                    label: 'Chunks',
+                    value: String(chunkCount)
+                  }
+                ]
+              : undefined
+        });
+        return;
+      }
+
+      if (step.type === 'tool' || step.type === 'mcp') {
+        executedTools.push(step);
+        const toolName =
+          step?.label ||
+          step?.input_json?.tool ||
+          step?.input_json?.tool_name ||
+          step?.output_json?.tool ||
+          step?.output_json?.name;
+        const serverName =
+          step?.input_json?.server_name ||
+          step?.input_json?.server ||
+          step?.input_json?.server_id ||
+          step?.output_json?.server;
+        const status =
+          step?.output_json?.status || step?.output_json?.state || (step?.output_json?.error ? 'error' : undefined);
+        const outputSummary = (() => {
+          if (step?.output_json?.error) {
+            return truncateText(step.output_json.error);
           }
-          if (Array.isArray(result)) {
+          const result = step?.output_json?.result ?? step?.output_json?.data ?? step?.output_json?.output;
+          if (result != null) {
+            if (typeof result === 'string') {
+              return truncateText(result);
+            }
+            if (Array.isArray(result)) {
+              return truncateText(
+                result
+                  .map((item) => {
+                    if (typeof item === 'string') return item;
+                    try {
+                      return JSON.stringify(item);
+                    } catch (error) {
+                      return String(item);
+                    }
+                  })
+                  .join('\n')
+              );
+            }
+            if (typeof result === 'object') {
+              try {
+                return truncateText(JSON.stringify(result));
+              } catch (error) {
+                return 'Result ready.';
+              }
+            }
+            return String(result);
+          }
+          const content = step?.output_json?.content;
+          if (typeof content === 'string') {
+            return truncateText(content);
+          }
+          if (Array.isArray(content)) {
             return truncateText(
-              result
+              content
                 .map((item) => {
                   if (typeof item === 'string') return item;
+                  if (typeof item?.text === 'string') return item.text;
+                  if (typeof item?.content === 'string') return item.content;
                   try {
                     return JSON.stringify(item);
                   } catch (error) {
-                    return String(item);
+                    return '';
                   }
                 })
+                .filter(Boolean)
                 .join('\n')
             );
           }
-          if (typeof result === 'object') {
-            try {
-              return truncateText(JSON.stringify(result));
-            } catch (error) {
-              return 'Result ready.';
-            }
-          }
-          return String(result);
-        }
-        const content = step?.output_json?.content;
-        if (typeof content === 'string') {
-          return truncateText(content);
-        }
-        if (Array.isArray(content)) {
-          return truncateText(
-            content
-              .map((item) => {
-                if (typeof item === 'string') return item;
-                if (typeof item?.text === 'string') return item.text;
-                if (typeof item?.content === 'string') return item.content;
-                try {
-                  return JSON.stringify(item);
-                } catch (error) {
-                  return '';
-                }
-              })
-              .filter(Boolean)
-              .join('\n')
-          );
-        }
-        return status ? `Status: ${status}` : 'Execution finished.';
-      })();
-      entries.push({
-        id: `tool-${step.id}`,
-        icon: step.type === 'mcp' ? '🌐' : '🛠️',
-        title: baseTitle,
-        summary: outputSummary,
-        timestamp: step?.ts || null,
-        steps: [step],
-        payloadVisibility: 'both',
-        quickMeta: [
+          return status ? `Status: ${status}` : 'Execution finished.';
+        })();
+        const quickMeta = [
+          ...(toolName ? [{ label: 'Tool', value: toolName }] : []),
+          ...(serverName ? [{ label: 'Server', value: serverName }] : []),
           ...(status ? [{ label: 'Status', value: status }] : []),
           ...(step?.latency_ms != null ? [{ label: 'Latency', value: `${step.latency_ms} ms` }] : [])
-        ]
+        ];
+        pushEntry({
+          ...base,
+          id: `${step.id}-tool`,
+          icon: step.type === 'mcp' ? '🌐' : '🛠️',
+          title: step.type === 'mcp' ? 'MCP Run' : 'Tool Run',
+          summary: outputSummary,
+          payloadVisibility: 'both',
+          quickMeta: quickMeta.length ? quickMeta : undefined
+        });
+        return;
+      }
+
+      if (step.type === 'model') {
+        if (step.input_json) {
+          const messageStats = getMessageStats(step.input_json);
+          const quickMeta = [];
+          if (messageStats.system) {
+            quickMeta.push({ label: 'System msgs', value: String(messageStats.system) });
+          }
+          if (messageStats.user) {
+            quickMeta.push({ label: 'User msgs', value: String(messageStats.user) });
+          }
+          if (messageStats.tool) {
+            quickMeta.push({ label: 'Tool msgs', value: String(messageStats.tool) });
+          }
+          pushEntry({
+            ...base,
+            id: `${step.id}-model-input`,
+            icon: '📤',
+            title: 'LLM API Request',
+            summary: getModelInputPreview(step.input_json, executedTools),
+            payloadVisibility: 'input',
+            quickMeta:
+              quickMeta.length || executedTools.length
+                ? [
+                    ...quickMeta,
+                    ...(executedTools.length
+                      ? [
+                          {
+                            label: 'Tool outputs',
+                            value: String(executedTools.length)
+                          }
+                        ]
+                      : [])
+                  ]
+                : undefined,
+            defaultExpanded: entries.length === 0
+          });
+        }
+
+        if (step.output_json) {
+          const output = step.output_json;
+          const toolCalls = Array.isArray(output?.tool_calls)
+            ? output.tool_calls
+            : Array.isArray(output?.tools)
+            ? output.tools
+            : null;
+          const assistantText = coerceContentToText(output?.content ?? output?.text ?? output?.message);
+
+          if (toolCalls?.length) {
+            pushEntry({
+              ...base,
+              id: `${step.id}-tool-request`,
+              icon: '🤖',
+              title: toolCalls.length === 1 ? 'LLM Requested Tool' : 'LLM Requested Tools',
+              summary: `Requested ${toolCalls.length === 1 ? 'a tool call' : `${toolCalls.length} tool calls`}.`,
+              payloadVisibility: 'output',
+              quickMeta: toolCalls.map((call, index) => ({
+                label: toolCalls.length > 1 ? `Tool ${index + 1}` : 'Tool',
+                value: call?.function?.name || call?.name || 'Tool call'
+              })),
+              defaultExpanded: true
+            });
+          }
+
+          if (assistantText) {
+            pushEntry({
+              ...base,
+              id: `${step.id}-assistant`,
+              icon: toolCalls?.length ? '🗣️' : '💬',
+              title: toolCalls?.length ? 'Assistant Follow-up' : 'LLM Response',
+              summary: truncateText(assistantText),
+              payloadVisibility: 'output',
+              defaultExpanded: !toolCalls?.length
+            });
+          } else if (!toolCalls?.length && !entries.length) {
+            pushEntry({
+              ...base,
+              id: `${step.id}-assistant-fallback`,
+              icon: '💬',
+              title: 'LLM Response',
+              summary: getModelResponsePreview(output),
+              payloadVisibility: 'output',
+              defaultExpanded: true
+            });
+          }
+        }
+        return;
+      }
+
+      pushEntry({
+        ...base,
+        id: `${step.id}-other`,
+        icon: '🔍',
+        title: step.label || 'Additional Activity',
+        summary: truncateText(
+          step.label ||
+            coerceContentToText(step.input_json) ||
+            coerceContentToText(step.output_json) ||
+            'Supplementary trace entry.'
+        ),
+        payloadVisibility: step.input_json && step.output_json ? 'both' : step.input_json ? 'input' : 'output'
       });
     });
-
-    const firstModelStepWithInput = modelSteps.find((step) => step?.input_json);
-    if (firstModelStepWithInput) {
-      entries.push({
-        id: `model-input-${firstModelStepWithInput.id}`,
-        icon: '📥',
-        title: 'LLM Input',
-        summary: getModelInputPreview(firstModelStepWithInput.input_json, toolSteps),
-        timestamp: firstModelStepWithInput?.ts || null,
-        steps: [firstModelStepWithInput],
-        payloadVisibility: 'input',
-        quickMeta:
-          toolSteps.length > 0
-            ? [
-                {
-                  label: 'Tool outputs included',
-                  value: String(toolSteps.length)
-                }
-              ]
-            : []
-      });
-    }
-
-    const lastModelStepWithOutput = [...modelSteps].reverse().find((step) => step?.output_json);
-    if (lastModelStepWithOutput) {
-      entries.push({
-        id: `model-output-${lastModelStepWithOutput.id}`,
-        icon: '🤖',
-        title: 'LLM Response',
-        summary: getModelResponsePreview(lastModelStepWithOutput.output_json),
-        timestamp: lastModelStepWithOutput?.ts || null,
-        steps: [lastModelStepWithOutput],
-        payloadVisibility: 'output',
-        defaultExpanded: true
-      });
-    }
 
     return entries;
   }, [selectedRunDetails]);
