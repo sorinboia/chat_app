@@ -110,10 +110,10 @@ class AppConfig(BaseModel):
     def safe_payload(self) -> Dict[str, object]:
         """Return a version of the configuration safe to expose to clients."""
         return {
-            "models": self.models.dict(),
-            "mcp": {"servers": [server.dict(exclude={"command", "args"}) for server in self.mcp.servers]},
-            "rag": self.rag.dict(),
-            "personas": self.personas.dict(),
+            "models": self.models.model_dump(),
+            "mcp": {"servers": [server.model_dump(exclude={"command", "args"}) for server in self.mcp.servers]},
+            "rag": self.rag.model_dump(),
+            "personas": self.personas.model_dump(),
         }
 
 

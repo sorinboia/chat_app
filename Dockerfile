@@ -37,10 +37,16 @@ FROM python:3.11-slim
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    DEBIAN_FRONTEND=noninteractive \
+    PLAYWRIGHT_BROWSERS_PATH=/usr/local/share/playwright-browsers
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libffi8 libssl3 curl \
+    && apt-get install -y --no-install-recommends bash curl ca-certificates gnupg libffi8 libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=backend-deps /install /usr/local
@@ -49,6 +55,9 @@ COPY config ./config
 COPY data ./data
 COPY app.db ./app.db
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
+
+RUN npm install -g @playwright/mcp@latest \
+    && npx --yes playwright@latest install --with-deps chromium
 
 RUN mkdir -p data/uploads
 

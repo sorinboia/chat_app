@@ -22,8 +22,9 @@ class OllamaService:
         if not self.discover:
             return [self._format_model(name) for name in self.fallback_models]
 
+        timeout = httpx.Timeout(self.timeout_seconds)
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.get(f"{self.base_url}/api/tags")
                 response.raise_for_status()
                 data = response.json()
@@ -54,8 +55,9 @@ class OllamaService:
         if tools:
             payload["tools"] = tools
 
+        timeout = httpx.Timeout(self.timeout_seconds)
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(f"{self.base_url}/api/chat", json=payload)
                 response.raise_for_status()
                 data = response.json()

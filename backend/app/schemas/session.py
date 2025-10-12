@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import List, Optional
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 
 
 class SessionBase(BaseModel):
@@ -42,7 +42,7 @@ class MessageBase(BaseModel):
     content: str
     attachments: Optional[List[str]] = None
 
-    @validator("content")
+    @field_validator("content")
     def validate_content(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("Message content cannot be empty")
@@ -56,7 +56,7 @@ class MessageCreateRequest(MessageBase):
 class MessageEditRequest(BaseModel):
     content: str
 
-    @validator("content")
+    @field_validator("content")
     def validate_content(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("Message content cannot be empty")
