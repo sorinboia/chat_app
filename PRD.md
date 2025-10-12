@@ -92,8 +92,14 @@
 - Layout:
   - **Run list rail:** status badge, started timestamp, model id; selecting a run loads its detail view.  
   - **Run summary card:** latency, duration, token counts, model, retry indicator.  
-  - **Flow timeline:** horizontal, iconified sequence that highlights missing/skipped stages.  
-  - **Phase accordions:** grouped sections for Prompt, Retrieval, Tools/MCP, and Model Output. Each accordion shows a human-readable preview (e.g., prompt snippet, chunk count, tool call status) and expands to reveal the full JSON payloads with copy actions.  
+  - **Linear timeline cards:** vertically stacked steps that clarify every handoff:
+    - **User Prompt:** quick preview (first ~200 chars + token count) with details showing the exact payload sent.
+    - **Retrieval Payload:** shown when RAG executes; quick view highlights chunk count + top snippet, expansion reveals full retrieved text/metadata.
+    - **Tool / MCP Execution:** one card per call; quick view surfaces tool name, MCP transport, status; expansion shows function signature, arguments, outputs.
+    - **LLM Input:** summarises what the model actually consumed (prompt + injected tool outputs); details expose the compiled prompt JSON/text with copy action.
+    - **LLM Response:** distinguishes between final assistant reply and tool requests; quick view shows the relevant preview, expansion includes the full response object and reasoning summary if present.
+    - **Transport/System badges:** inline indicators for reasoning summaries or transport metadata without opening details.
+  - **Phase accordions deprecated:** replaced by the timeline cards above; each card still supports copy-to-clipboard actions within its expanded state.  
 - Additional details: per-step latency bar, transport metadata toggle, retrieved chunk previews, tool/MCP call inputs/outputs, assistant deltas.  
 - **Important:** No verbatim chain-of-thought is stored or shown; include model-provided **reasoning summaries** when available.  
 - **Access:** Launch from the chat header beside the RAG button; opens as a modal that can be dismissed without leaving the chat.
