@@ -56,8 +56,6 @@ COPY data ./data
 COPY app.db ./app.db
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
-RUN npm install -g @playwright/mcp@latest \
-    && npx --yes playwright@latest install --with-deps chromium
 
 RUN mkdir -p data/uploads
 

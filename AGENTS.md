@@ -10,7 +10,21 @@ You are in charge of testing and running the app.
 For testing the UI use browsermcp.
 When testing the backend endpoint use curl.
 
+The backend and front end server are already running and when reload when there are config changes.
+The backend is available at 0.0.0.0:8000 and the frontend at 0.0.0.0:5174 .
+
+
+
+
+
 After you have finished an important step or fixed an issue do a git commit.
+
+
+
+
+
+
+
 
 ## Conventions for Running Python
 

@@ -554,6 +554,104 @@ def test_session_creation_respects_persona_defaults(monkeypatch):
         assert invalid_session.status_code == 400
 
 
+def test_session_creation_respects_persona_defaults(monkeypatch):
+    stub_service = StubOllamaService([])
+    monkeypatch.setattr(session_api, "get_ollama_service", lambda: stub_service)
+
+    with TestClient(app) as client:
+        login_payload = {"email": "amber.lee@example.com", "password": "DemoPass123!"}
+        login_response = client.post("/auth/login", json=login_payload)
+        assert login_response.status_code == 200
+        token = login_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        default_session = client.post("/sessions", json={}, headers=headers)
+        assert default_session.status_code == 201
+        default_body = default_session.json()
+        assert default_body["persona_id"] == "mcp"
+        assert default_body["model_id"] == "llama3.2:3b"
+        assert default_body["rag_enabled"] is True
+        assert default_body["streaming_enabled"] is False
+        assert default_body["enabled_mcp_servers"] == ["playwright", "filesystem-tools"]
+
+        debugger_session = client.post("/sessions", json={"persona_id": "debugger"}, headers=headers)
+        assert debugger_session.status_code == 201
+        debugger_body = debugger_session.json()
+        assert debugger_body["persona_id"] == "debugger"
+        assert debugger_body["rag_enabled"] is False
+        assert debugger_body["streaming_enabled"] is True
+        assert debugger_body["enabled_mcp_servers"] == []
+        assert debugger_body["model_id"] == "llama3.2:3b"
+
+        override_session = client.post(
+            "/sessions",
+            json={
+                "persona_id": "debugger",
+                "rag_enabled": True,
+                "streaming_enabled": False,
+                "enabled_mcp_servers": ["playwright"],
+            },
+            headers=headers,
+        )
+        assert override_session.status_code == 201
+        override_body = override_session.json()
+        assert override_body["rag_enabled"] is True
+        assert override_body["streaming_enabled"] is False
+        assert override_body["enabled_mcp_servers"] == ["playwright"]
+
+        invalid_session = client.post("/sessions", json={"persona_id": "unknown"}, headers=headers)
+        assert invalid_session.status_code == 400
+
+
+def test_session_creation_respects_persona_defaults(monkeypatch):
+    stub_service = StubOllamaService([])
+    monkeypatch.setattr(session_api, "get_ollama_service", lambda: stub_service)
+
+    with TestClient(app) as client:
+        login_payload = {"email": "amber.lee@example.com", "password": "DemoPass123!"}
+        login_response = client.post("/auth/login", json=login_payload)
+        assert login_response.status_code == 200
+        token = login_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        default_session = client.post("/sessions", json={}, headers=headers)
+        assert default_session.status_code == 201
+        default_body = default_session.json()
+        assert default_body["persona_id"] == "mcp"
+        assert default_body["model_id"] == "llama3.2:3b"
+        assert default_body["rag_enabled"] is True
+        assert default_body["streaming_enabled"] is False
+        assert default_body["enabled_mcp_servers"] == ["playwright", "filesystem-tools"]
+
+        debugger_session = client.post("/sessions", json={"persona_id": "debugger"}, headers=headers)
+        assert debugger_session.status_code == 201
+        debugger_body = debugger_session.json()
+        assert debugger_body["persona_id"] == "debugger"
+        assert debugger_body["rag_enabled"] is False
+        assert debugger_body["streaming_enabled"] is True
+        assert debugger_body["enabled_mcp_servers"] == []
+        assert debugger_body["model_id"] == "llama3.2:3b"
+
+        override_session = client.post(
+            "/sessions",
+            json={
+                "persona_id": "debugger",
+                "rag_enabled": True,
+                "streaming_enabled": False,
+                "enabled_mcp_servers": ["playwright"],
+            },
+            headers=headers,
+        )
+        assert override_session.status_code == 201
+        override_body = override_session.json()
+        assert override_body["rag_enabled"] is True
+        assert override_body["streaming_enabled"] is False
+        assert override_body["enabled_mcp_servers"] == ["playwright"]
+
+        invalid_session = client.post("/sessions", json={"persona_id": "unknown"}, headers=headers)
+        assert invalid_session.status_code == 400
+
+
 if __name__ == "__main__":
     setup_module(None)
     test_basic_flow()

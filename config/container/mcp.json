@@ -3,7 +3,7 @@
     {
       "name": "playwright",
       "transport": "streamtable_http",
-      "base_url": "http://localhost:8931",
+      "base_url": "http://playwright-mcp:8931",
       "requires_api_key": false,
       "enabled_by_default": false
     }
