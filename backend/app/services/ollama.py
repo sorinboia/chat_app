@@ -87,6 +87,51 @@ class OllamaService:
             else:
                 message = {"role": "assistant", "content": ""}
 
+        thinking_payload = message.get("thinking")
+        normalized_thinking: Optional[str] = None
+        if isinstance(thinking_payload, str):
+            normalized_thinking = thinking_payload.strip()
+        elif isinstance(thinking_payload, list):
+            parts: List[str] = []
+            for item in thinking_payload:
+                if isinstance(item, str):
+                    value = item.strip()
+                    if value:
+                        parts.append(value)
+                elif isinstance(item, dict):
+                    text_value = item.get("text") or item.get("content")
+                    if isinstance(text_value, str):
+                        value = text_value.strip()
+                        if value:
+                            parts.append(value)
+            if parts:
+                normalized_thinking = "\n\n".join(parts).strip()
+        elif thinking_payload is not None:
+            value = str(thinking_payload).strip()
+            if value:
+                normalized_thinking = value
+
+        if normalized_thinking:
+            message["thinking"] = normalized_thinking
+            content_value = message.get("content")
+            if isinstance(content_value, str):
+                content_text = content_value
+            elif content_value is None:
+                content_text = ""
+            else:
+                content_text = str(content_value)
+            lower_content = content_text.lower()
+            if "<think>" not in lower_content:
+                prefix = f"<think>{normalized_thinking}</think>"
+                if content_text:
+                    message["content"] = f"{prefix}\n\n{content_text}"
+                else:
+                    message["content"] = prefix
+            else:
+                message["content"] = content_text
+        else:
+            message.pop("thinking", None)
+
         if "content" not in message or not isinstance(message.get("content"), str):
             content_value = message.get("content")
             if isinstance(content_value, str):

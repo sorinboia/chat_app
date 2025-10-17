@@ -280,8 +280,8 @@ def _sanitize_generated_title(raw_title: str) -> Optional[str]:
     text = raw_title.strip()
     if not text:
         return None
-    text = re.sub(r"<think>.*?</think>", " ", text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r"</?think>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<(?:think|thinking)>.*?</(?:think|thinking)>", " ", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"</?(?:think|thinking)>", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
     candidates = [segment.strip(" \"'`") for segment in text.splitlines()]
     for candidate in candidates:

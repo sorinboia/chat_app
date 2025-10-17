@@ -333,7 +333,7 @@ function parseMessageForThoughts(content) {
   if (!content || typeof content !== 'string') {
     return { displayContent: content, thoughts: null };
   }
-  const pattern = /<think>([\s\S]*?)<\/think>/gi;
+  const pattern = /<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/gi;
   const thoughts = [];
   let match;
   while ((match = pattern.exec(content)) !== null) {
