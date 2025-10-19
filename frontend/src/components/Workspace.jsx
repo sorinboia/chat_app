@@ -402,7 +402,6 @@ export default function Workspace({ user, onLogout }) {
   const [ragDeletingId, setRagDeletingId] = useState(null);
   const [expandedThoughts, setExpandedThoughts] = useState({});
   const [expandedEntries, setExpandedEntries] = useState({});
-  const [showTransportDetails, setShowTransportDetails] = useState(false);
   const [copiedPayloadKey, setCopiedPayloadKey] = useState(null);
   const sendAbortControllerRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -632,7 +631,6 @@ export default function Workspace({ user, onLogout }) {
 
   useEffect(() => {
     setExpandedEntries({});
-    setShowTransportDetails(false);
   }, [selectedRunDetails?.id]);
 
   const scrollMessagesToBottom = useCallback(
@@ -1969,19 +1967,8 @@ export default function Workspace({ user, onLogout }) {
                           </div>
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                          <div className="flex items-center justify-between">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-                              Details
-                            </div>
-                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 accent-brand-primary"
-                                checked={showTransportDetails}
-                                onChange={(event) => setShowTransportDetails(event.target.checked)}
-                              />
-                              Transport metadata
-                            </label>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                            Details
                           </div>
                           <div className="mt-3 space-y-2 text-sm text-slate-600">
                             <div className="flex items-center justify-between">
@@ -2061,29 +2048,6 @@ export default function Workspace({ user, onLogout }) {
                                         <div className="space-y-3 border-t border-slate-200 px-4 py-4">
                                           {entry.steps?.length ? (
                                             entry.steps.map((step) => {
-                                              const metadataEntries = [];
-                                              if (showTransportDetails) {
-                                                const transportValue = step?.input_json?.transport || step?.output_json?.transport;
-                                                const serverValue =
-                                                  step?.input_json?.server_name ||
-                                                  step?.input_json?.server ||
-                                                  step?.input_json?.server_id ||
-                                                  step?.output_json?.server_name;
-                                                const urlValue =
-                                                  step?.input_json?.base_url ||
-                                                  step?.output_json?.base_url ||
-                                                  step?.input_json?.endpoint ||
-                                                  step?.output_json?.endpoint;
-                                                if (transportValue) {
-                                                  metadataEntries.push({ label: 'Transport', value: transportValue });
-                                                }
-                                                if (serverValue) {
-                                                  metadataEntries.push({ label: 'Server', value: serverValue });
-                                                }
-                                                if (urlValue) {
-                                                  metadataEntries.push({ label: 'URL', value: urlValue });
-                                                }
-                                              }
                                               const showInput = entry.payloadVisibility !== 'output';
                                               const showOutput = entry.payloadVisibility !== 'input';
                                               return (
@@ -2103,19 +2067,6 @@ export default function Workspace({ user, onLogout }) {
                                                       {step.ts && <span>{formatDate(step.ts)}</span>}
                                                     </div>
                                                   </div>
-                                                  {metadataEntries.length > 0 && (
-                                                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-slate-500">
-                                                      {metadataEntries.map((meta) => (
-                                                        <span
-                                                          key={`${step.id}-${meta.label}`}
-                                                          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600"
-                                                        >
-                                                          <span className="text-[9px] uppercase tracking-wide text-slate-400">{meta.label}</span>
-                                                          <span className="font-semibold text-slate-600">{meta.value}</span>
-                                                        </span>
-                                                      ))}
-                                                    </div>
-                                                  )}
                                                   {showInput && step.input_json && (
                                                     <div className="mt-3 space-y-1">
                                                       <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-slate-400">
