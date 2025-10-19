@@ -18,6 +18,7 @@
 - All config is admin-defined JSON under `/config/*.json` and loaded at startup (fail-fast on invalid schema).  
 - Runs locally and via `docker-compose`.  
 - Branding uses F5 colors (primary red **#E21D38** and white).
+- During initial bootstrap (config/models/personas load), the UI shows a full-screen overlay with a progress bar and “Loading…” text until all required data is ready.
 
 ## 3) Non-Goals
 - No SSO/OAuth (email+password only).  
