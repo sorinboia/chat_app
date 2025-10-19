@@ -403,6 +403,7 @@ export default function Workspace({ user, onLogout }) {
   const [expandedThoughts, setExpandedThoughts] = useState({});
   const [expandedEntries, setExpandedEntries] = useState({});
   const [copiedPayloadKey, setCopiedPayloadKey] = useState(null);
+  const [payloadPreview, setPayloadPreview] = useState(null);
   const sendAbortControllerRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const previousMessageCountRef = useRef(0);
@@ -779,6 +780,7 @@ export default function Workspace({ user, onLogout }) {
 
   const handleCloseActivityModal = useCallback(() => {
     setIsActivityModalOpen(false);
+    setPayloadPreview(null);
   }, []);
 
   const handleOpenMcpModal = useCallback(() => {
@@ -1040,6 +1042,18 @@ export default function Workspace({ user, onLogout }) {
     },
     [setCopiedPayloadKey]
   );
+
+  const handleOpenPayloadPreview = useCallback((payload, title) => {
+    if (!payload) return;
+    setPayloadPreview({
+      title,
+      payload
+    });
+  }, []);
+
+  const handleClosePayloadPreview = useCallback(() => {
+    setPayloadPreview(null);
+  }, []);
 
   const toggleThoughtsForMessage = useCallback(
     (messageId) => {
@@ -2050,6 +2064,7 @@ export default function Workspace({ user, onLogout }) {
                                             entry.steps.map((step) => {
                                               const showInput = entry.payloadVisibility !== 'output';
                                               const showOutput = entry.payloadVisibility !== 'input';
+                                              const payloadContextTitle = step.label || step.type || 'Payload';
                                               return (
                                                 <div
                                                   key={`${entry.id}-${step.id}`}
@@ -2071,13 +2086,27 @@ export default function Workspace({ user, onLogout }) {
                                                     <div className="mt-3 space-y-1">
                                                       <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                                                         <span>Input payload</span>
-                                                        <button
-                                                          className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 transition hover:border-brand-primary/70 hover:text-brand-primary"
-                                                          type="button"
-                                                          onClick={() => handleCopyPayload(step.input_json, `${step.id}-input`)}
-                                                        >
-                                                          {copiedPayloadKey === `${step.id}-input` ? 'Copied' : 'Copy'}
-                                                        </button>
+                                                        <div className="flex items-center gap-2">
+                                                          <button
+                                                            className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 transition hover:border-brand-primary/70 hover:text-brand-primary"
+                                                            type="button"
+                                                            onClick={() =>
+                                                              handleOpenPayloadPreview(
+                                                                step.input_json,
+                                                                `${payloadContextTitle} • Input`
+                                                              )
+                                                            }
+                                                          >
+                                                            Expand
+                                                          </button>
+                                                          <button
+                                                            className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 transition hover:border-brand-primary/70 hover:text-brand-primary"
+                                                            type="button"
+                                                            onClick={() => handleCopyPayload(step.input_json, `${step.id}-input`)}
+                                                          >
+                                                            {copiedPayloadKey === `${step.id}-input` ? 'Copied' : 'Copy'}
+                                                          </button>
+                                                        </div>
                                                       </div>
                                                       <pre className="max-h-64 w-full max-w-full overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
                                                         {JSON.stringify(step.input_json, null, 2)}
@@ -2088,13 +2117,27 @@ export default function Workspace({ user, onLogout }) {
                                                     <div className="mt-3 space-y-1">
                                                       <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                                                         <span>Output payload</span>
-                                                        <button
-                                                          className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 transition hover:border-brand-primary/70 hover:text-brand-primary"
-                                                          type="button"
-                                                          onClick={() => handleCopyPayload(step.output_json, `${step.id}-output`)}
-                                                        >
-                                                          {copiedPayloadKey === `${step.id}-output` ? 'Copied' : 'Copy'}
-                                                        </button>
+                                                        <div className="flex items-center gap-2">
+                                                          <button
+                                                            className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 transition hover:border-brand-primary/70 hover:text-brand-primary"
+                                                            type="button"
+                                                            onClick={() =>
+                                                              handleOpenPayloadPreview(
+                                                                step.output_json,
+                                                                `${payloadContextTitle} • Output`
+                                                              )
+                                                            }
+                                                          >
+                                                            Expand
+                                                          </button>
+                                                          <button
+                                                            className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 transition hover:border-brand-primary/70 hover:text-brand-primary"
+                                                            type="button"
+                                                            onClick={() => handleCopyPayload(step.output_json, `${step.id}-output`)}
+                                                          >
+                                                            {copiedPayloadKey === `${step.id}-output` ? 'Copied' : 'Copy'}
+                                                          </button>
+                                                        </div>
                                                       </div>
                                                       <pre className="max-h-64 w-full max-w-full overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
                                                         {JSON.stringify(step.output_json, null, 2)}
@@ -2134,6 +2177,47 @@ export default function Workspace({ user, onLogout }) {
                   )}
                 </div>
               </div>
+            </div>
+      </div>
+    </div>
+  )}
+      {payloadPreview && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 px-6 py-12 backdrop-blur-sm"
+          onClick={(event) => {
+            event.stopPropagation();
+            handleClosePayloadPreview();
+          }}
+        >
+          <div
+            className="glass-card w-full max-w-4xl overflow-hidden border border-white/60 bg-white/95 text-slate-900 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payload-preview-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 px-6 py-5">
+              <div>
+                <h3 id="payload-preview-title" className="text-lg font-semibold text-slate-900">
+                  {payloadPreview.title || 'Payload preview'}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">Expanded payload view.</p>
+              </div>
+              <button
+                className={buttonStyles.iconMuted}
+                onClick={handleClosePayloadPreview}
+                aria-label="Close payload preview"
+                type="button"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto px-6 py-5">
+              <pre className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
+                {typeof payloadPreview.payload === 'string'
+                  ? payloadPreview.payload
+                  : JSON.stringify(payloadPreview.payload, null, 2)}
+              </pre>
             </div>
           </div>
         </div>
