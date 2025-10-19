@@ -60,6 +60,20 @@ body.is-resizing * {
   }
 }
 
+@keyframes loadingBar {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  50% {
+    transform: translateX(0%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @layer components {
   .glass-card {
     @apply rounded-3xl border border-white/60 bg-white/70 shadow-card backdrop-blur;
@@ -176,5 +190,39 @@ body.is-resizing * {
 
   .markdown-content a {
     @apply font-semibold text-brand-primary underline underline-offset-2 transition hover:text-brand-primary/80;
+  }
+
+  .app-loading-overlay {
+    @apply fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/70 backdrop-blur;
+  }
+
+  .app-loading-overlay__panel {
+    @apply flex w-[min(90vw,24rem)] flex-col items-center gap-5 rounded-3xl border border-white/60 bg-white/90 p-8 text-center shadow-2xl;
+  }
+
+  .app-loading-overlay__label {
+    @apply text-lg font-semibold uppercase tracking-[0.4em] text-brand-primary;
+    letter-spacing: 0.3em;
+  }
+
+  .app-loading-overlay__progress {
+    @apply relative h-2 w-full overflow-hidden rounded-full bg-slate-200;
+  }
+
+  .app-loading-overlay__progress-bar {
+    @apply absolute inset-y-0 left-0 w-1/2 bg-brand-primary;
+    animation: loadingBar 1.4s ease-in-out infinite;
+  }
+
+  .app-loading-overlay__hint {
+    @apply text-sm text-slate-600;
+  }
+
+  .app-loading-overlay__error {
+    @apply text-sm font-medium text-rose-600;
+  }
+
+  .app-loading-overlay__actions {
+    @apply mt-2 flex items-center justify-center;
   }
 }

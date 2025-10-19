@@ -369,6 +369,8 @@ const markdownComponents = {
 export default function Workspace({ user, onLogout }) {
   const [config, setConfig] = useState(null);
   const [models, setModels] = useState([]);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [bootstrapError, setBootstrapError] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -484,13 +486,30 @@ export default function Workspace({ user, onLogout }) {
   }, []);
 
   useEffect(() => {
+    let canceled = false;
     const bootstrap = async () => {
-      const [cfg, mdl] = await Promise.all([fetchConfig(), fetchModels()]);
-      setConfig(cfg);
-      setModels(mdl);
-      await loadSessions();
+      setBootstrapError(null);
+      setIsBootstrapping(true);
+      try {
+        const [cfg, mdl] = await Promise.all([fetchConfig(), fetchModels()]);
+        if (canceled) return;
+        setConfig(cfg);
+        setModels(mdl);
+        await loadSessions();
+      } catch (error) {
+        if (canceled) return;
+        console.error('Failed to bootstrap workspace', error);
+        setBootstrapError('Failed to load initial data. Refresh once the backend is reachable.');
+      } finally {
+        if (!canceled) {
+          setIsBootstrapping(false);
+        }
+      }
     };
-    bootstrap().catch((error) => console.error('Failed to bootstrap workspace', error));
+    bootstrap();
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1313,9 +1332,40 @@ export default function Workspace({ user, onLogout }) {
   );
   const selectedRunModelId = selectedRunDetails?.model_id || selectedRun?.model_id || 'model';
   const selectedRunStartedAt = selectedRunDetails?.started_at || selectedRun?.started_at || null;
+  const showBootstrapOverlay = isBootstrapping || !!bootstrapError;
+  const bootstrapOverlayLabel = bootstrapError ? 'Loading failed' : 'Loading…';
+  const bootstrapOverlayDescription = bootstrapError
+    ? 'Unable to load configuration or models. Confirm the backend is running, then refresh.'
+    : 'Fetching configuration, models, and sessions.';
 
   return (
     <div className="relative min-h-screen">
+      {showBootstrapOverlay && (
+        <div className="app-loading-overlay" role="status" aria-live={bootstrapError ? 'assertive' : 'polite'}>
+          <div className="app-loading-overlay__panel">
+            <span className="app-loading-overlay__label">{bootstrapOverlayLabel}</span>
+            {!bootstrapError && (
+              <div className="app-loading-overlay__progress" aria-hidden="true">
+                <div className="app-loading-overlay__progress-bar" />
+              </div>
+            )}
+            <p className={bootstrapError ? 'app-loading-overlay__error' : 'app-loading-overlay__hint'}>
+              {bootstrapOverlayDescription}
+            </p>
+            {bootstrapError && (
+              <div className="app-loading-overlay__actions">
+                <button
+                  type="button"
+                  className={buttonStyles.primary}
+                  onClick={() => window.location.reload()}
+                >
+                  Refresh
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[32rem] bg-[radial-gradient(circle_at_top,_rgba(226,29,56,0.16),_transparent_65%)]"
