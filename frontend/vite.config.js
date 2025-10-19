@@ -20,6 +20,7 @@ export default defineConfig({
       '/sessions': 'http://localhost:8000',
       '/traces': 'http://localhost:8000',
       '/uploads': 'http://localhost:8000',
+      '/rag': 'http://localhost:8000'
       // If your backend needs the Host header rewritten (common in Docker), do:
       // '/auth': { target: 'http://localhost:8000', changeOrigin: true }
     }
