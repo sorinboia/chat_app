@@ -86,7 +86,7 @@ class MCPService:
                         "type": "function",
                         "function": {
                             "name": function_name,
-                            "description": f"{description} (via {server_name})",
+                            "description": f"{description}",
                             "parameters": parameters,
                         },
                     }

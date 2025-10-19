@@ -3,11 +3,11 @@
 Always use PRD.md to design the application.
 If design changes make sure you edit the PRD.md, do this only after the user approves it.
 
-User browsermcp MCP in order to test the app that you create.
+User chrome-devtools in order to test the app that you create.
 Use context7 MCP to get up to date documentation.
 
 You are in charge of testing and running the app.
-For testing the UI use browsermcp.
+For testing the UI use chrome-devtools.
 When testing the backend endpoint use curl.
 
 The backend and front end server are already running and when reload when there are config changes.

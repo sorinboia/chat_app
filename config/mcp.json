@@ -6,6 +6,13 @@
       "base_url": "http://localhost:8931",
       "requires_api_key": false,
       "enabled_by_default": false
+    },
+    {
+      "name": "mcp-math",
+      "transport": "streamtable_http",
+      "base_url": "http://localhost:20000/mcp",
+      "requires_api_key": false,
+      "enabled_by_default": false
     }
     
   ]

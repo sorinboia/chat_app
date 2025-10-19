@@ -3,7 +3,14 @@
     {
       "name": "playwright",
       "transport": "streamtable_http",
-      "base_url": "http://playwright-mcp:8931",
+      "base_url": "http://playwright:8931",
+      "requires_api_key": false,
+      "enabled_by_default": false
+    },
+    {
+      "name": "mcp-math",
+      "transport": "streamtable_http",
+      "base_url": "http://mcp-attack:20000/mcp",
       "requires_api_key": false,
       "enabled_by_default": false
     }

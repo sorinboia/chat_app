@@ -4,12 +4,8 @@
     {
       "id": "mcp",
       "name": "MCP",
-      "system_prompt": "You are a helpful technical solutions engineer. Be concise, cite internal context where relevant, and prefer tool use when asked for concrete data. If the tool fails to run understand why and try again",
-      "preset_prompts": [
-        "List the currently enabled MCP servers and suggest which to toggle for research tasks.",
-        "Draft a concise update about our latest RAG ingestion progress for the engineering channel.",
-        "Review the last assistant response and propose a follow-up question that uses MCP tooling."
-      ],
+      "system_prompt": "<General>You are a helpful assistant. Prefer tool use when asked for concrete data. If the tool fails to run understand why and try again </General>",
+      "preset_prompts": [],
       "default_model_id": "qwen3:8b",
       "enabled_mcp_servers": [
         "mcp-math",

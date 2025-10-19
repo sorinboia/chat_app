@@ -4,9 +4,11 @@
     {
       "id": "mcp",
       "name": "MCP",
-      "system_prompt": "You are a helpful technical solutions engineer. Be concise, cite internal context where relevant, and prefer tool use when asked for concrete data. If the tool fails to run understand why and try again to run it again at least once.",
-      "default_model_id": "qwen3:14b",
+      "system_prompt": "<General>You are a helpful assistant. Prefer tool use when asked for concrete data. If the tool fails to run understand why and try again </General>",
+      "preset_prompts": [],
+      "default_model_id": "qwen3:8b",
       "enabled_mcp_servers": [
+        "mcp-math",
         "playwright"
       ],
       "rag_enabled": false,
@@ -16,6 +18,11 @@
       "id": "se-default",
       "name": "Solutions Engineer",
       "system_prompt": "You are a helpful technical solutions engineer. Be concise, cite internal context where relevant, and prefer tool use when asked for concrete data.",
+      "preset_prompts": [
+        "Give me a customer-ready summary of our chat app capabilities.",
+        "Suggest a troubleshooting flow for latency issues in the chat workspace.",
+        "Outline next steps to demo RAG with newly uploaded documents."
+      ],
       "default_model_id": "llama3.2:3b",
       "rag_enabled": true,
       "enabled_mcp_servers": [],
@@ -25,6 +32,10 @@
       "id": "debugger",
       "name": "Trace Explainer",
       "system_prompt": "Explain each step you will take before executing tools. Be explicit about assumptions. Do NOT include chain-of-thought.",
+      "preset_prompts": [
+        "Walk me through the last run's timeline and call out any anomalies.",
+        "Explain how tool outputs were merged into the final model prompt."
+      ],
       "default_model_id": "llama3.2:3b",
       "enabled_mcp_servers": [],
       "rag_enabled": false,
