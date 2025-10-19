@@ -1861,7 +1861,7 @@ export default function Workspace({ user, onLogout }) {
               </button>
             </div>
             <div className="flex-1 overflow-auto px-6 py-6">
-              <div className="grid h-full gap-6 lg:grid-cols-[320px,1fr] lg:items-start">
+              <div className="grid h-full gap-6 lg:grid-cols-[260px,1fr] lg:items-start">
                 <div className="flex h-full flex-col space-y-4 overflow-hidden">
                   <div className="space-y-2">
                     <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Runs</h3>
@@ -2134,7 +2134,7 @@ export default function Workspace({ user, onLogout }) {
                                                           {copiedPayloadKey === `${step.id}-input` ? 'Copied' : 'Copy'}
                                                         </button>
                                                       </div>
-                                                      <pre className="max-h-64 overflow-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs leading-relaxed text-slate-700">
+                                                      <pre className="max-h-64 w-full max-w-full overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
                                                         {JSON.stringify(step.input_json, null, 2)}
                                                       </pre>
                                                     </div>
@@ -2151,7 +2151,7 @@ export default function Workspace({ user, onLogout }) {
                                                           {copiedPayloadKey === `${step.id}-output` ? 'Copied' : 'Copy'}
                                                         </button>
                                                       </div>
-                                                      <pre className="max-h-64 overflow-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs leading-relaxed text-slate-700">
+                                                      <pre className="max-h-64 w-full max-w-full overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
                                                         {JSON.stringify(step.output_json, null, 2)}
                                                       </pre>
                                                     </div>
