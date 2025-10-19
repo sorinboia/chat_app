@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, ValidationError, constr
+from pydantic import BaseModel, Field, ValidationError, constr, conlist
 from urllib.parse import urlparse, urlunparse
 
 
@@ -67,6 +67,12 @@ class PersonaConfig(BaseModel):
     enabled_mcp_servers: Optional[List[str]] = None
     rag_enabled: Optional[bool] = None
     streaming_enabled: Optional[bool] = None
+    preset_prompts: Optional[
+        conlist(constr(strip_whitespace=True, min_length=1), max_length=4)
+    ] = Field(
+        default=None,
+        description="Optional quick prompts available in the UI for this persona",
+    )
 
 
 class PersonasConfig(BaseModel):

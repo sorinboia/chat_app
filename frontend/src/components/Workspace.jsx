@@ -437,6 +437,39 @@ export default function Workspace({ user, onLogout }) {
     });
     return map;
   }, [config, globalDefaultMcpServers]);
+  const personaPresetPromptsMap = useMemo(() => {
+    const map = new Map();
+    const personas = config?.personas?.personas || [];
+    personas.forEach((persona) => {
+      if (!persona) return;
+      const presets = [];
+      if (Array.isArray(persona.preset_prompts)) {
+        persona.preset_prompts.forEach((prompt) => {
+          if (typeof prompt !== 'string') return;
+          const sanitized = prompt.trim();
+          if (sanitized) {
+            presets.push(sanitized);
+          }
+        });
+      }
+      map.set(persona.id, presets.slice(0, 4));
+    });
+    return map;
+  }, [config]);
+  const defaultPersonaId = config?.personas?.default_persona_id || null;
+  const activePersonaId = activeSession?.persona_id || defaultPersonaId;
+  const activePersonaPresetPrompts = useMemo(() => {
+    if (personaPresetPromptsMap.size === 0) {
+      return [];
+    }
+    if (activePersonaId && personaPresetPromptsMap.has(activePersonaId)) {
+      return personaPresetPromptsMap.get(activePersonaId) || [];
+    }
+    if (defaultPersonaId && personaPresetPromptsMap.has(defaultPersonaId)) {
+      return personaPresetPromptsMap.get(defaultPersonaId) || [];
+    }
+    return [];
+  }, [personaPresetPromptsMap, activePersonaId, defaultPersonaId]);
   const buttonStyles = useMemo(
     () => ({
       primary:
@@ -449,6 +482,8 @@ export default function Workspace({ user, onLogout }) {
         'inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/30 bg-white/10 text-lg text-white/80 transition hover:border-brand-primary/50 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary',
       iconMuted:
         'inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white/70 text-lg text-slate-500 transition hover:border-brand-primary/40 hover:text-brand-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:cursor-not-allowed disabled:opacity-40',
+      preset:
+        'inline-flex max-w-full items-start gap-2 rounded-2xl border border-slate-200 bg-white/70 px-4 py-2 text-sm font-medium leading-snug text-slate-600 shadow-sm transition hover:border-brand-primary/40 hover:text-brand-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:cursor-not-allowed disabled:opacity-60',
       pill:
         'inline-flex items-center rounded-full bg-brand-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-brand-primary'
     }),
@@ -935,6 +970,27 @@ export default function Workspace({ user, onLogout }) {
     }
     responseAudioQueuedRef.current = false;
   };
+
+  const handleApplyPresetPrompt = useCallback(
+    (prompt) => {
+      if (!prompt || sending) return;
+      setComposerText((current) => {
+        const base = current ?? '';
+        const sanitizedPrompt = prompt.trim();
+        if (!sanitizedPrompt) {
+          return base;
+        }
+        if (!base.trim()) {
+          return sanitizedPrompt;
+        }
+        const hadTrailingNewline = /\n\s*$/.test(base);
+        const trimmed = base.trimEnd();
+        const separator = hadTrailingNewline ? '\n' : '\n\n';
+        return `${trimmed}${separator}${sanitizedPrompt}`;
+      });
+    },
+    [sending]
+  );
 
   const handleStartEditing = () => {
     const latestUserMessage = [...messages]
@@ -1695,6 +1751,27 @@ export default function Workspace({ user, onLogout }) {
 
           <footer className="border-t border-slate-200/70 bg-white/80 px-8 py-6 backdrop-blur">
             <div className="flex flex-col gap-4">
+              {activePersonaPresetPrompts.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                    Quick prompts
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {activePersonaPresetPrompts.map((prompt, index) => (
+                      <button
+                        key={`${activePersonaId || 'default'}-preset-${index}`}
+                        type="button"
+                        className={buttonStyles.preset}
+                        onClick={() => handleApplyPresetPrompt(prompt)}
+                        disabled={sending}
+                        title={prompt}
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="relative">
                 <textarea
                   value={composerText}
