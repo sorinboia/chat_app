@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import LoginForm from './components/LoginForm.jsx';
 import Workspace from './components/Workspace.jsx';
 import { login, fetchMe } from './api/index.js';
@@ -10,6 +10,12 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const handleLogout = useCallback(() => {
+    setAuthToken(null);
+    setToken(null);
+    setUser(null);
+  }, []);
+
   useEffect(() => {
     const stored = getStoredToken();
     if (stored) {
@@ -17,9 +23,16 @@ export default function App() {
       setToken(stored);
       fetchMe()
         .then((data) => setUser(data))
-        .catch(() => setUser(null));
+        .catch((err) => {
+          if (err?.response?.status === 401) {
+            handleLogout();
+            return;
+          }
+          console.error('Failed to fetch current user.', err);
+          setUser(null);
+        });
     }
-  }, []);
+  }, [handleLogout]);
 
   const handleLogin = async ({ email, password }) => {
     setLoading(true);
@@ -32,16 +45,13 @@ export default function App() {
       setUser(profile);
     } catch (err) {
       console.error(err);
+      if (err?.response?.status === 401 && err?.config?.url?.includes('/auth/me')) {
+        handleLogout();
+      }
       setError('Invalid email or password');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleLogout = () => {
-    setAuthToken(null);
-    setToken(null);
-    setUser(null);
   };
 
   if (!token) {
