@@ -1132,8 +1132,7 @@ export default function Workspace({ user, onLogout }) {
           icon: '🧭',
           title: 'System Prompt',
           summary: systemText ? truncateText(systemText) : 'System context applied.',
-          payloadVisibility: step.input_json ? 'input' : step.output_json ? 'output' : null,
-          defaultExpanded: index === 0
+          payloadVisibility: step.input_json ? 'input' : step.output_json ? 'output' : null
         });
         return;
       }
@@ -1145,8 +1144,7 @@ export default function Workspace({ user, onLogout }) {
           icon: '📝',
           title: 'User Prompt',
           summary: extractPhasePreview('prompt', [step]),
-          payloadVisibility: step.input_json ? 'input' : step.output_json ? 'output' : null,
-          defaultExpanded: entries.length === 0
+          payloadVisibility: step.input_json ? 'input' : step.output_json ? 'output' : null
         });
         return;
       }
@@ -1297,8 +1295,7 @@ export default function Workspace({ user, onLogout }) {
                         ]
                       : [])
                   ]
-                : undefined,
-            defaultExpanded: entries.length === 0
+                : undefined
           });
         }
 
@@ -1323,7 +1320,7 @@ export default function Workspace({ user, onLogout }) {
                 label: toolCalls.length > 1 ? `Tool ${index + 1}` : 'Tool',
                 value: call?.function?.name || call?.name || 'Tool call'
               })),
-              defaultExpanded: true
+              defaultExpanded: false
             });
           }
 
@@ -1335,7 +1332,7 @@ export default function Workspace({ user, onLogout }) {
               title: toolCalls?.length ? 'Assistant Follow-up' : 'LLM Response',
               summary: truncateText(assistantText),
               payloadVisibility: 'output',
-              defaultExpanded: !toolCalls?.length
+              defaultExpanded: false
             });
           } else if (!toolCalls?.length && !entries.length) {
             pushEntry({
@@ -1345,7 +1342,7 @@ export default function Workspace({ user, onLogout }) {
               title: 'LLM Response',
               summary: getModelResponsePreview(output),
               payloadVisibility: 'output',
-              defaultExpanded: true
+              defaultExpanded: false
             });
           }
         }
@@ -2018,10 +2015,7 @@ export default function Workspace({ user, onLogout }) {
                             <div className="absolute left-5 top-0 bottom-0 w-px bg-slate-200" aria-hidden="true" />
                             <div className="space-y-4">
                               {timelineEntries.map((entry, index) => {
-                                const isExpanded =
-                                  expandedEntries[entry.id] ??
-                                  entry.defaultExpanded ??
-                                  index === 0;
+                                const isExpanded = expandedEntries[entry.id] ?? entry.defaultExpanded ?? false;
                                 return (
                                   <div key={entry.id} className="relative pl-12">
                                     <div className="absolute left-0 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-xl shadow-sm">
