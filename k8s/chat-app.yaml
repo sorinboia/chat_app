@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-app
+  namespace: chat-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat-app
+  template:
+    metadata:
+      labels:
+        app: chat-app
+    spec:
+      containers:
+        - name: chat-app
+          image: your-registry/chat-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: APP_CONFIG_DIR
+              value: config/container
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-app
+  namespace: chat-app
+spec:
+  selector:
+    app: chat-app
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+  type: ClusterIP
