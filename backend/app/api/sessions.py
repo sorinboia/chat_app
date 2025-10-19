@@ -242,14 +242,33 @@ async def _store_upload(
     )
 
 
-def _resolve_persona_prompt(persona_id: str | None, app_config) -> Optional[str]:
+def _format_user_context(user: User) -> str:
+    """Compose a one-line description of the authenticated user."""
+    display_name = user.full_name or user.email
+    detail_parts: List[str] = [f"email: {user.email}", f"user id: {user.id}"]
+    if user.title:
+        detail_parts.append(f"title: {user.title}")
+    if user.team:
+        detail_parts.append(f"team: {user.team}")
+    return f"Logged-in user: {display_name} ({', '.join(detail_parts)})."
+
+
+def _resolve_persona_prompt(persona_id: str | None, app_config, user: Optional[User] = None) -> Optional[str]:
     personas = app_config.personas
     target_id = persona_id or personas.default_persona_id
     for persona in personas.personas:
         if persona.id == target_id:
-            return persona.system_prompt
+            prompt = persona.system_prompt
+            if prompt and user is not None:
+                user_context = _format_user_context(user)
+                return f"{user_context}\n\n{prompt}"
+            return prompt
     try:
-        return personas.get_default().system_prompt
+        prompt = personas.get_default().system_prompt
+        if prompt and user is not None:
+            user_context = _format_user_context(user)
+            return f"{user_context}\n\n{prompt}"
+        return prompt
     except ValueError:
         return None
 
@@ -427,7 +446,7 @@ async def _process_user_turn(
             },
         )
 
-    persona_prompt = _resolve_persona_prompt(chat_session.persona_id, app_config)
+    persona_prompt = _resolve_persona_prompt(chat_session.persona_id, app_config, user)
     history_stmt = (
         select(Message)
         .where(Message.session_id == chat_session.id)
