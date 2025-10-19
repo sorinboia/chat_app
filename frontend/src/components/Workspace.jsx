@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import JsonTreeView from './JsonTreeView.jsx';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -410,6 +411,43 @@ export default function Workspace({ user, onLogout }) {
   const responseAudioRef = useRef(null);
   const lastAssistantMessageIdRef = useRef(null);
   const responseAudioQueuedRef = useRef(false);
+
+  const payloadPreviewContent = useMemo(() => {
+    if (!payloadPreview) {
+      return { json: null, text: null, parseError: null };
+    }
+    const { payload } = payloadPreview;
+    if (payload === undefined) {
+      return { json: null, text: 'undefined', parseError: null };
+    }
+    if (typeof payload === 'string') {
+      try {
+        const parsed = JSON.parse(payload);
+        return { json: parsed, text: payload, parseError: null };
+      } catch (error) {
+        return {
+          json: null,
+          text: payload,
+          parseError: 'Unable to parse payload as JSON.'
+        };
+      }
+    }
+    if (payload === null) {
+      return { json: null, text: 'null', parseError: null };
+    }
+    if (typeof payload === 'object') {
+      try {
+        return { json: payload, text: JSON.stringify(payload, null, 2), parseError: null };
+      } catch (error) {
+        return {
+          json: payload,
+          text: '[object Object]',
+          parseError: 'Unable to serialise payload for preview.'
+        };
+      }
+    }
+    return { json: null, text: String(payload), parseError: null };
+  }, [payloadPreview]);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || null,
@@ -1025,9 +1063,10 @@ export default function Workspace({ user, onLogout }) {
 
   const handleCopyPayload = useCallback(
     (payload, key) => {
-      if (!payload) return;
+      if (payload === undefined) return;
       try {
-        const payloadString = JSON.stringify(payload, null, 2);
+        const payloadString =
+          typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
         if (typeof navigator === 'undefined' || !navigator.clipboard) {
           console.warn('Clipboard API not available.');
           return;
@@ -2190,11 +2229,12 @@ export default function Workspace({ user, onLogout }) {
           }}
         >
           <div
-            className="glass-card w-full max-w-4xl overflow-hidden border border-white/60 bg-white/95 text-slate-900 shadow-2xl"
+            className="glass-card flex w-full max-w-[92vw] resize flex-col overflow-hidden border border-white/60 bg-white/95 text-slate-900 shadow-2xl lg:max-w-6xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="payload-preview-title"
             onClick={(event) => event.stopPropagation()}
+            style={{ minHeight: '20rem', maxHeight: '90vh' }}
           >
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 px-6 py-5">
               <div>
@@ -2203,21 +2243,37 @@ export default function Workspace({ user, onLogout }) {
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">Expanded payload view.</p>
               </div>
-              <button
-                className={buttonStyles.iconMuted}
-                onClick={handleClosePayloadPreview}
-                aria-label="Close payload preview"
-                type="button"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 transition hover:border-brand-primary/60 hover:text-brand-primary"
+                  type="button"
+                  onClick={() => handleCopyPayload(payloadPreview.payload, 'payload-preview')}
+                >
+                  {copiedPayloadKey === 'payload-preview' ? 'Copied' : 'Copy'}
+                </button>
+                <button
+                  className={buttonStyles.iconMuted}
+                  onClick={handleClosePayloadPreview}
+                  aria-label="Close payload preview"
+                  type="button"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
-            <div className="max-h-[70vh] overflow-auto px-6 py-5">
-              <pre className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
-                {typeof payloadPreview.payload === 'string'
-                  ? payloadPreview.payload
-                  : JSON.stringify(payloadPreview.payload, null, 2)}
-              </pre>
+            <div className="flex flex-1 flex-col overflow-hidden px-6 py-5">
+              {payloadPreviewContent.json ? (
+                <div className="flex-1 overflow-auto rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <JsonTreeView data={payloadPreviewContent.json} />
+                </div>
+              ) : (
+                <pre className="flex-1 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
+                  {payloadPreviewContent.text || ''}
+                </pre>
+              )}
+              {payloadPreviewContent.parseError && (
+                <p className="mt-3 text-xs font-medium text-amber-600">{payloadPreviewContent.parseError}</p>
+              )}
             </div>
           </div>
         </div>
