@@ -475,6 +475,11 @@ async def _process_user_turn(
     assistant_text = ""
     tool_iterations = 0
     max_tool_iterations = 4
+    aggregated_prompt_tokens = 0
+    aggregated_completion_tokens = 0
+    token_metrics_recorded = False
+    aggregated_total_duration_ns = 0
+    duration_metrics_recorded = False
 
     while True:
         request_snapshot = copy.deepcopy(llm_messages)
@@ -491,6 +496,34 @@ async def _process_user_turn(
                 messages=request_snapshot,
                 tools=tools_payload if tools_payload else None,
             )
+            raw_payload = response.get("raw")
+            if isinstance(raw_payload, dict):
+                prompt_count = raw_payload.get("prompt_eval_count")
+                if isinstance(prompt_count, (int, float)):
+                    aggregated_prompt_tokens += int(prompt_count)
+                    token_metrics_recorded = True
+                completion_count = raw_payload.get("eval_count")
+                if isinstance(completion_count, (int, float)):
+                    aggregated_completion_tokens += int(completion_count)
+                    token_metrics_recorded = True
+                total_duration = raw_payload.get("total_duration")
+                if isinstance(total_duration, (int, float)):
+                    aggregated_total_duration_ns += int(total_duration)
+                    duration_metrics_recorded = True
+                else:
+                    prompt_duration = raw_payload.get("prompt_eval_duration")
+                    eval_duration = raw_payload.get("eval_duration")
+                    duration_components = 0
+                    has_duration_component = False
+                    if isinstance(prompt_duration, (int, float)):
+                        duration_components += int(prompt_duration)
+                        has_duration_component = True
+                    if isinstance(eval_duration, (int, float)):
+                        duration_components += int(eval_duration)
+                        has_duration_component = True
+                    if has_duration_component:
+                        aggregated_total_duration_ns += duration_components
+                        duration_metrics_recorded = True
         except RuntimeError as exc:
             assistant_text = (
                 "I couldn't reach the model to craft a response right now. "
@@ -656,7 +689,25 @@ async def _process_user_turn(
         content=assistant_text,
     )
     db.add(assistant_message)
-    await trace_service.finish_run(db, run_id=run.id, status="completed")
+    prompt_tokens_value: Optional[int] = None
+    completion_tokens_value: Optional[int] = None
+    total_tokens_value: Optional[int] = None
+    if token_metrics_recorded:
+        prompt_tokens_value = aggregated_prompt_tokens
+        completion_tokens_value = aggregated_completion_tokens
+        total_tokens_value = aggregated_prompt_tokens + aggregated_completion_tokens
+    latency_ms_value: Optional[int] = None
+    if duration_metrics_recorded and aggregated_total_duration_ns > 0:
+        latency_ms_value = int(round(aggregated_total_duration_ns / 1_000_000))
+    await trace_service.finish_run(
+        db,
+        run_id=run.id,
+        status="completed",
+        total_tokens=total_tokens_value,
+        prompt_tokens=prompt_tokens_value,
+        completion_tokens=completion_tokens_value,
+        latency_ms=latency_ms_value,
+    )
     await db.commit()
     await db.refresh(assistant_message)
 
