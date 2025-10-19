@@ -1883,13 +1883,13 @@ export default function Workspace({ user, onLogout }) {
           onClick={handleCloseActivityModal}
         >
           <div
-            className="glass-card flex h-full max-h-[calc(100vh-4rem)] min-h-[24rem] w-full max-w-[calc(100vw-3rem)] flex-col border border-white/60 bg-white/95 text-slate-900 shadow-2xl"
+            className="glass-card flex h-full max-h-[calc(100vh-4rem)] min-h-[24rem] w-full max-w-[calc(100vw-3rem)] flex-col overflow-hidden border border-white/60 bg-white/95 text-slate-900 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="activity-modal-title"
             aria-describedby="activity-modal-description"
             onClick={(event) => event.stopPropagation()}
-            style={{ resize: 'both', overflow: 'auto' }}
+            style={{ resize: 'vertical' }}
           >
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 px-6 py-5">
               <div>
@@ -1908,7 +1908,7 @@ export default function Workspace({ user, onLogout }) {
                 ✕
               </button>
             </div>
-            <div className="flex-1 overflow-auto px-6 py-6">
+            <div className="flex-1 overflow-y-auto px-6 py-6">
               <div className="grid h-full gap-6 lg:grid-cols-[260px,1fr] lg:items-start">
                 <div className="flex h-full flex-col space-y-4 overflow-hidden">
                   <div className="space-y-2">
