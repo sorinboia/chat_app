@@ -12,11 +12,15 @@ class OllamaService:
         discover: bool = True,
         fallback_models: List[str] | None = None,
         timeout_seconds: float = 120,
+        host_header: Optional[str] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.discover = discover
         self.fallback_models = fallback_models or []
         self.timeout_seconds = timeout_seconds
+        self._headers: Optional[Dict[str, str]] = None
+        if host_header:
+            self._headers = {"Host": host_header}
 
     async def list_models(self) -> List[Dict[str, Any]]:
         if not self.discover:
@@ -24,7 +28,7 @@ class OllamaService:
 
         timeout = httpx.Timeout(self.timeout_seconds)
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout, headers=self._headers) as client:
                 response = await client.get(f"{self.base_url}/api/tags")
                 response.raise_for_status()
                 data = response.json()
@@ -57,7 +61,7 @@ class OllamaService:
 
         timeout = httpx.Timeout(self.timeout_seconds)
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout, headers=self._headers) as client:
                 response = await client.post(f"{self.base_url}/api/chat", json=payload)
                 response.raise_for_status()
                 data = response.json()

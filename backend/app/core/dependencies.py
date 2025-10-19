@@ -78,6 +78,7 @@ def get_ollama_service() -> OllamaService:
         discover=models_config.ollama.discover_models,
         fallback_models=[models_config.default_model],
         timeout_seconds=models_config.ollama.request_timeout_seconds,
+        host_header=models_config.ollama.host_header,
     )
 
 

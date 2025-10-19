@@ -16,6 +16,7 @@ async def list_models(app_config=Depends(get_app_config)):
         discover=models_config.ollama.discover_models,
         fallback_models=[models_config.default_model],
         timeout_seconds=models_config.ollama.request_timeout_seconds,
+        host_header=models_config.ollama.host_header,
     )
     models = await service.list_models()
     return {"models": models}

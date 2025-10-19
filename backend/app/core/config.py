@@ -12,6 +12,10 @@ from urllib.parse import urlparse, urlunparse
 
 class OllamaConfig(BaseModel):
     base_url: str = Field(..., description="Base URL for the Ollama service")
+    host_header: Optional[str] = Field(
+        default=None,
+        description="Optional Host header value to send with Ollama requests",
+    )
     discover_models: bool = Field(True, description="Whether to discover models dynamically")
     prepull: List[str] = Field(default_factory=list, description="Optional list of models to pre-pull")
     request_timeout_seconds: float = Field(
@@ -160,10 +164,16 @@ def _apply_env_overrides(models: ModelsConfig) -> None:
     base_url_override = os.getenv("OLLAMA_BASE_URL")
     if base_url_override:
         models.ollama.base_url = base_url_override
+        host_header_override = os.getenv("OLLAMA_HOST_HEADER")
+        if host_header_override:
+            models.ollama.host_header = host_header_override
         return
 
     ip_override = os.getenv("OLLAMA_IP")
     if not ip_override:
+        host_header_override = os.getenv("OLLAMA_HOST_HEADER")
+        if host_header_override:
+            models.ollama.host_header = host_header_override
         return
 
     parsed = urlparse(models.ollama.base_url)
@@ -188,6 +198,9 @@ def _apply_env_overrides(models: ModelsConfig) -> None:
         )
     )
     models.ollama.base_url = rebuilt
+    host_header_override = os.getenv("OLLAMA_HOST_HEADER")
+    if host_header_override:
+        models.ollama.host_header = host_header_override
 
 
 def load_config_set(config_dir: Path) -> ConfigSet:
