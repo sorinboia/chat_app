@@ -3,7 +3,7 @@
   "allow_user_switch_per_conversation": true,
   "ollama": {
     "base_url": "http://54.149.39.81:11434",
-    "host_header": null,
+    "host_header": "chat-app.lab",
     "discover_models": true,
     "prepull": [],
     "request_timeout_seconds": 240
